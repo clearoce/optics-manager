@@ -1,0 +1,31 @@
+# Common
+node_modules/
+.DS_Store
+*.log
+.env
+dist/
+build/
+
+# Backend (Go)
+backend/optics.db
+backend/optics.db-shm
+backend/optics.db-wal
+backend/backend.exe
+backend/*.exe
+
+# Frontend (Vite/React)
+frontend/dist/
+frontend/node_modules/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
