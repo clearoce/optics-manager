@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"time"
+	_ "time/tzdata" // 自动将时区数据打包进二进制文件
 )
 
 var Loc *time.Location

@@ -1,12 +1,19 @@
 package main
 
 import (
+	"embed"
+	"io/fs"
 	"log"
+	"net/http"
 	"optics-manager/database"
 	"optics-manager/handlers"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
+
+//go:embed dist/*
+var frontendFiles embed.FS
 
 func main() {
 	database.Init("optics.db")
@@ -64,16 +71,53 @@ func main() {
 	}
 
 	// ---------------------------------------------------------
-	// 静态资源服务 (前端)
+	// 嵌入式静态资源服务 (前端)
 	// ---------------------------------------------------------
-	// 服务前端编译后的静态资源
-	r.Static("/assets", "../frontend/dist/assets")
+	distFS, err := fs.Sub(frontendFiles, "dist")
+	if err != nil {
+		log.Fatalf("无法加载嵌入的前端文件: %v", err)
+	}
+
+	// 提前读取 index.html 以提升性能并避免 http 自动重定向逻辑
+	indexContent, err := fs.ReadFile(distFS, "index.html")
+	if err != nil {
+		log.Fatalf("无法加载前端入口文件 index.html: %v", err)
+	}
+
+	// 拦截对 assets 等目录下静态文件的请求
+	r.GET("/assets/*filepath", func(c *gin.Context) {
+		c.FileFromFS(c.Request.URL.Path, http.FS(distFS))
+	})
 
 	// 单页应用 (SPA) 路由支持：所有非 API 请求都指向 index.html
 	r.NoRoute(func(c *gin.Context) {
-		// 如果是访问具体文件（如 .js, .css）但 Static 没匹配到，则 404
-		// 否则返回 index.html 让前端路由接管
-		c.File("../frontend/dist/index.html")
+		path := c.Request.URL.Path
+
+		if strings.HasPrefix(path, "/api") {
+			c.Status(http.StatusNotFound)
+			return
+		}
+
+		filePath := strings.TrimPrefix(path, "/")
+		if filePath == "" || filePath == "index.html" {
+			// 直接返回内存中的 index.html，不经过 http 库那烦人的重定向
+			c.Data(http.StatusOK, "text/html; charset=utf-8", indexContent)
+			return
+		}
+
+		// 检查非根路由文件是否存在，如果存在并且不是目录就发送它
+		file, err := distFS.Open(filePath)
+		if err == nil {
+			stat, errStat := file.Stat()
+			file.Close()
+			if errStat == nil && !stat.IsDir() {
+				c.FileFromFS(filePath, http.FS(distFS))
+				return
+			}
+		}
+
+		// 文件不存在或其他任意路由，全部交给 React 的 index.html 去做前端路由处理
+		c.Data(http.StatusOK, "text/html; charset=utf-8", indexContent)
 	})
 
 	log.Println("服务器启动，监听端口 :8080")
