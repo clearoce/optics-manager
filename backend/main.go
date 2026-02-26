@@ -55,10 +55,6 @@ func main() {
 			products.GET("/:id", handlers.GetProductByID)
 			products.PUT("/:id", handlers.UpdateProduct)
 			products.DELETE("/:id", handlers.DeleteProduct)
-			// 库存调整接口，路径设计成 /products/:id/stock，语义清晰
-			// 商品库存变更日志查询
-			products.GET("/:id/inventory-logs", handlers.GetProductInventoryLogs)
-			products.POST("/:id/stock", handlers.AdjustStock)
 		}
 
 		// 订单管理
@@ -67,6 +63,8 @@ func main() {
 			orders.POST("", handlers.CreateOrder)
 			orders.GET("", handlers.GetOrders)
 			orders.GET("/:id", handlers.GetOrderDetail)
+			orders.PUT("/:id", handlers.UpdateOrder)
+			orders.DELETE("/:id", handlers.DeleteOrder)
 		}
 	}
 

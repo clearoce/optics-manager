@@ -6,7 +6,7 @@
 
 ## 一、项目概述
 
-本项目是一套面向眼镜店店主的单人管理系统，核心功能包括客户管理、订单管理、库存管理与库存变更审计。采用本地部署（单机）架构，数据存储在 SQLite 文件中，通过浏览器访问前端页面并调用本地后端 API。
+本项目是一套面向眼镜店店主的单人管理系统，核心功能包括客户管理、商品管理与订单管理。采用本地部署（单机）架构，数据存储在 SQLite 文件中，通过浏览器访问前端页面并调用本地后端 API。
 
 ---
 
@@ -35,8 +35,7 @@ optics-manager/backend
 ├── models/
 │   ├── customer.go          # 客户数据结构
 │   ├── product.go           # 商品数据结构
-│   ├── order.go             # 订单 / 订单明细 / 订单详情组合结构
-│   └── inventory.go         # 库存日志数据结构
+│   └── order.go             # 订单 / 订单明细 / 订单详情组合结构
 └── handlers/
     ├── customer.go          # 客户管理接口处理器
     ├── product.go           # 商品管理接口处理器
@@ -51,8 +50,6 @@ optics-manager/backend
 
 ```
 customers ──< orders ──< order_items >── products
-                                              │
-                                        inventory_logs
 ```
 
 ### 4.2 各表说明
@@ -76,8 +73,6 @@ customers ──< orders ──< order_items >── products
 | category | TEXT | 分类（如镜框、镜片、隐形眼镜） |
 | sku | TEXT UNIQUE | 商品编号（可为空） |
 | price | REAL | 当前售价 |
-| stock_quantity | INTEGER | 当前库存数量 |
-| low_stock_threshold | INTEGER | 低库存阈值（默认 10） |
 | extra_info | TEXT | JSON 格式，预留拓展字段 |
 | created_at | DATETIME | 创建时间，默认 UTC+8 |
 
@@ -103,28 +98,11 @@ customers ──< orders ──< order_items >── products
 | unit_price | REAL | 成交时的价格快照（与当前售价解耦） |
 | subtotal | REAL | 小计（quantity × unit_price） |
 
-**`inventory_logs`（库存变动日志表）**
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | INTEGER PK | 自增主键 |
-| product_id | INTEGER FK | 关联商品 |
-| change_amount | INTEGER | 变动数量，正数入库，负数出库 |
-| reason | TEXT | 变动原因（如"订单出库"、"手动盘点"） |
-| reference_id | INTEGER | 触发变动的订单 ID，手动调整时为 NULL |
-| created_at | DATETIME | 记录时间，默认 UTC+8 |
-
 ### 4.3 重要设计决策
 
 **价格快照**：`order_items.unit_price` 在订单创建时独立存储当时的成交价，与 `products.price` 完全解耦。商品涨价不会影响历史订单金额。
 
 **JSON 拓展字段**：`orders.extra_info` 和 `products.extra_info` 使用 JSON 字符串存储将来可能新增的字段（如配镜度数、瞳距），无需修改表结构。
-
-**库存双重记录**：`products.stock_quantity` 记录当前库存结果，`inventory_logs` 记录每次变动的过程。前者用于快速查询，后者用于审计追溯，两者互相印证。
-
-**库存修改强制留日志**：库存变更被独立成专用接口（`POST /api/products/:id/stock`），从接口设计层面杜绝了"改库存但不写日志"的可能性。
-
-**低库存阈值内置化**：每个商品独立维护 `low_stock_threshold`，前端按 `stock_quantity <= low_stock_threshold` 判定库存预警状态，避免硬编码固定阈值。
 
 ---
 
@@ -167,29 +145,9 @@ customers ──< orders ──< order_items >── products
 |------|------|------|
 | POST | `/api/products` | 新增商品 |
 | GET | `/api/products` | 查询商品列表，支持 `?category=` 分类筛选 |
-| GET | `/api/products/:id` | 查询单个商品（含库存） |
-| PUT | `/api/products/:id` | 修改商品信息（不含库存） |
+| GET | `/api/products/:id` | 查询单个商品 |
+| PUT | `/api/products/:id` | 修改商品信息 |
 | DELETE | `/api/products/:id` | 删除商品（有订单关联时禁止删除） |
-| POST | `/api/products/:id/stock` | 手动调整库存 |
-| GET | `/api/products/:id/inventory-logs` | 查询指定商品库存变更日志 |
-
-**手动调整库存请求示例（入库）：**
-
-```json
-{
-    "change_amount": 20,
-    "reason": "初始入库"
-}
-```
-
-**手动调整库存请求示例（出库修正）：**
-
-```json
-{
-    "change_amount": -3,
-    "reason": "盘点损耗"
-}
-```
 
 ### 5.3 订单管理
 
@@ -216,12 +174,10 @@ customers ──< orders ──< order_items >── products
 **订单创建会自动完成以下操作（在同一个事务内）：**
 
 1. 验证客户存在
-2. 验证每件商品库存充足
+2. 验证每件商品存在
 3. 以数据库当前价格计算总金额（不信任客户端传入的金额）
 4. 写入 `orders` 记录
 5. 写入每条 `order_items` 明细
-6. 扣减 `products.stock_quantity`
-7. 写入 `inventory_logs` 出库记录
 
 ---
 
@@ -241,36 +197,22 @@ customers ──< orders ──< order_items >── products
 
 ### 6.2 事务保护订单创建
 
-**问题描述**：创建订单需要同时操作四张表，任何一步失败都可能导致数据不一致（如订单已创建但库存未扣减）。
+**问题描述**：创建订单需要同时读写多张表，任何一步失败都可能导致数据不一致（如订单已创建但明细未写入）。
 
 **解决方案**：使用 `database/sql` 的事务（`tx.Begin` / `tx.Commit` / `tx.Rollback`），配合 Go 的 `defer` 机制实现自动回滚，确保"要么全部成功，要么全部撤销"。
 
-### 6.3 商品低库存阈值与老库兼容
+### 6.3 商品删除约束
 
-**问题描述**：库存预警阈值最初为前端固定值，无法按商品类型精细化设置；且老版本数据库缺失该字段。
-
-**解决方案**：
-
-- 在 `products` 表新增 `low_stock_threshold INTEGER NOT NULL DEFAULT 10`
-- 在创建/更新/查询商品接口中读写该字段
-- 在迁移逻辑中增加兼容处理：若老库缺列，则执行 `ALTER TABLE` 补齐字段
-
-**最终效果**：每个商品可独立设置预警阈值，且老数据可平滑升级。
-
-### 6.4 库存日志查询与删除约束
-
-**问题描述**：库存日志虽已写入，但缺少独立查询接口；商品删除也需要防止破坏订单历史一致性。
+**问题描述**：商品删除需要防止破坏历史订单一致性。
 
 **解决方案**：
 
-- 新增 `GET /api/products/:id/inventory-logs`，按时间倒序返回日志
-- 新增商品删除接口 `DELETE /api/products/:id`
+- 提供商品删除接口 `DELETE /api/products/:id`
 - 删除前校验 `order_items` 是否引用该商品；若存在历史订单则拒绝删除
-- 无订单关联时，先清理该商品库存日志，再删除商品
 
-**最终效果**：库存变更可追溯，且不会因误删商品破坏历史业务数据。
+**最终效果**：不会因误删商品破坏历史业务数据。
 
-### 6.5 前后端联调与 CORS
+### 6.4 前后端联调与 CORS
 
 **问题描述**：本地前端（Vite）与后端（Gin）端口不同，浏览器同源策略导致接口请求被拦截。
 
@@ -290,9 +232,8 @@ customers ──< orders ──< order_items >── products
 
 ### 中优先级（完善功能）
 
-- [x] **库存历史查询接口**：已实现 `GET /api/products/:id/inventory-logs`
 - [ ] **友好的错误提示**：手机号 / SKU 重复时，将数据库原始约束错误转换为中文提示
-- [ ] **订单取消逻辑**：将订单状态标记为已取消，并在事务内退回库存
+- [ ] **订单取消逻辑**：将订单状态标记为已取消，并保持订单与明细数据一致性
 - [ ] **订单商品重复校验**：创建订单时，若 `items` 数组中存在相同 `product_id`，应合并数量而非插入两条明细
 
 ### 低优先级（工程质量）

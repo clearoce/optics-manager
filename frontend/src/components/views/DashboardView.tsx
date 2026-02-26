@@ -1,4 +1,4 @@
-import { Clock, DollarSign, Package, Users } from 'lucide-react';
+import { DollarSign, Package, Users } from 'lucide-react';
 import type { Customer, Order, Product } from '../../types';
 import { StatCard } from '../common/StatCard';
 
@@ -10,7 +10,14 @@ type DashboardViewProps = {
 
 export function DashboardView({ products, orders, customers }: DashboardViewProps) {
   const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0);
-  const lowStockCount = products.filter((p) => p.stock <= p.lowStockThreshold).length;
+  const categoryStats = products.reduce<Record<string, number>>((acc, product) => {
+    const category = product.category.trim() || '未分类';
+    acc[category] = (acc[category] ?? 0) + 1;
+    return acc;
+  }, {});
+  const topCategories = Object.entries(categoryStats)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 6);
 
   return (
     <div className="space-y-6">
@@ -34,33 +41,26 @@ export function DashboardView({ products, orders, customers }: DashboardViewProp
           tip="已注册客户数"
         />
         <StatCard
-          title="库存预警"
-          value={lowStockCount.toString()}
-          icon={<Clock className="h-6 w-6 text-amber-600" />}
-          tip={`${lowStockCount} 个商品库存低于阈值`}
+          title="商品总数"
+          value={products.length.toString()}
+          icon={<Package className="h-6 w-6 text-amber-600" />}
+          tip="已录入系统的商品数量"
         />
       </div>
 
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <h3 className="text-lg font-semibold text-slate-900 mb-4">库存紧张商品</h3>
-        {lowStockCount > 0 ? (
+        <h3 className="text-lg font-semibold text-slate-900 mb-4">商品分类概览</h3>
+        {topCategories.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {products
-              .filter((p) => p.stock <= p.lowStockThreshold)
-              .slice(0, 6)
-              .map((p) => (
-                <div key={p.id} className="rounded-lg border border-slate-200 p-4 bg-slate-50">
-                  <p className="text-sm text-slate-500">{p.category}</p>
-                  <p className="font-semibold text-slate-900 mt-1">{p.name}</p>
-                  <div className="flex justify-between items-center mt-2">
-                    <p className="text-sm text-slate-600">库存：{p.stock}</p>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">低于 {p.lowStockThreshold}</span>
-                  </div>
-                </div>
-              ))}
+            {topCategories.map(([category, count]) => (
+              <div key={category} className="rounded-lg border border-slate-200 p-4 bg-slate-50">
+                <p className="text-sm text-slate-500">{category}</p>
+                <p className="font-semibold text-slate-900 mt-1">{count} 个商品</p>
+              </div>
+            ))}
           </div>
         ) : (
-          <p className="text-sm text-slate-500 italic">目前所有商品库存充足。</p>
+          <p className="text-sm text-slate-500 italic">暂无商品分类数据。</p>
         )}
       </div>
     </div>

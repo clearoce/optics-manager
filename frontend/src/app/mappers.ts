@@ -22,14 +22,6 @@ export function mapProductFromApi(row: ProductDTO): Product {
     sku: row.sku || '',
     category: row.category,
     price: row.price,
-    stock: row.stock_quantity,
-    lowStockThreshold: row.low_stock_threshold,
-    status:
-      row.stock_quantity <= 0
-        ? Status.OutOfStock
-        : row.stock_quantity <= row.low_stock_threshold
-          ? Status.LowStock
-          : Status.InStock,
     notes: row.extra_info || '',
     lastUpdated: row.created_at ? row.created_at.slice(0, 10) : '-',
   };

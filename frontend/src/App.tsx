@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bell,
   Edit,
   ExternalLink,
   FileText,
-  History,
   LayoutDashboard,
   Loader2,
   Package,
@@ -16,9 +15,9 @@ import {
 } from 'lucide-react';
 import { api } from './services/api';
 import type { Customer, Order, Product, View } from './types';
-import type { CustomerFormState, ProductFormState, StockFormState } from './app/formTypes';
+import type { CustomerFormState, ProductFormState } from './app/formTypes';
 import { mapCustomerFromApi, mapOrderFromApi, mapProductFromApi } from './app/mappers';
-import type { CreateOrderPayload } from './services/api';
+import type { CreateOrderPayload, UpdateOrderPayload } from './services/api';
 import { DashboardView } from './components/views/DashboardView';
 import { CustomersView } from './components/views/CustomersView';
 import { InventoryView } from './components/views/InventoryView';
@@ -29,6 +28,42 @@ const getStateFromUrl = () => {
   const view = (params.get('view') as View) || 'dashboard';
   const search = params.get('search') || '';
   return { view, search };
+};
+
+const getOrderCustomerLabel = (customer: Customer) => `${customer.name}（${customer.phone}）`;
+
+const getOrderProductLabel = (product: Product) =>
+  `${product.name}【${product.category}】${product.sku ? `（${product.sku}）` : ''}`;
+
+type OrderItemDraft = {
+  productId: string;
+  quantity: string;
+  productQuery: string;
+  unitPrice: string;
+  paidPrice: string;
+};
+
+const createEmptyOrderItemDraft = (): OrderItemDraft => ({
+  productId: '',
+  quantity: '1',
+  productQuery: '',
+  unitPrice: '',
+  paidPrice: '',
+});
+
+const formatCurrencyText = (value: number) => value.toFixed(2);
+
+const sanitizeMoneyTextInput = (raw: string) => {
+  const cleaned = raw.replace(/[^\d.]/g, '');
+  const [integerPart = '', ...decimalParts] = cleaned.split('.');
+  const decimalPart = decimalParts.join('').slice(0, 2);
+  return decimalParts.length > 0 ? `${integerPart}.${decimalPart}` : integerPart;
+};
+
+const normalizeMoneyTextToFixed2 = (raw: string) => {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return '';
+  return formatCurrencyText(parsed);
 };
 
 function App() {
@@ -55,11 +90,15 @@ function App() {
   // Create order modal
   const [isCreateOrderOpen, setIsCreateOrderOpen] = useState(false);
   const [orderCustomerId, setOrderCustomerId] = useState('');
-  const [orderItems, setOrderItems] = useState<Array<{ productId: string; quantity: string }>>([
-    { productId: '', quantity: '1' },
-  ]);
+  const [orderCustomerName, setOrderCustomerName] = useState('');
+  const [orderCustomerPhone, setOrderCustomerPhone] = useState('');
+  const [orderCustomerNotes, setOrderCustomerNotes] = useState('');
+  const [isCustomerPickerOpen, setIsCustomerPickerOpen] = useState(false);
+  const [activeProductPickerIndex, setActiveProductPickerIndex] = useState<number | null>(null);
+  const [orderItems, setOrderItems] = useState<OrderItemDraft[]>([createEmptyOrderItemDraft()]);
   const [orderNotes, setOrderNotes] = useState('');
   const [orderSubmitting, setOrderSubmitting] = useState(false);
+  const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
 
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -68,16 +107,8 @@ function App() {
     sku: '',
     category: '',
     price: '',
-    lowStockThreshold: '10',
     notes: '',
   });
-  const [isStockModalOpen, setIsStockModalOpen] = useState(false);
-  const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null);
-  const [stockForm, setStockForm] = useState<StockFormState>({ changeAmount: '', reason: '' });
-  const [logProduct, setLogProduct] = useState<Product | null>(null);
-  const [inventoryLogs, setInventoryLogs] = useState<Awaited<ReturnType<typeof api.products.inventoryLogs>>>([]);
-  const [inventoryLogsLoading, setInventoryLogsLoading] = useState(false);
-  const [inventoryLogsError, setInventoryLogsError] = useState('');
 
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -87,6 +118,7 @@ function App() {
   const [historyOrders, setHistoryOrders] = useState<Awaited<ReturnType<typeof api.orders.list>>>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
+  const customerPickerRef = useRef<HTMLDivElement | null>(null);
 
   const loadCustomers = async () => {
     setCustomersLoading(true);
@@ -109,7 +141,7 @@ function App() {
       const rows = await api.products.list();
       setProducts(rows.map(mapProductFromApi));
     } catch (error) {
-      setProductsError(error instanceof Error ? error.message : '加载库存数据失败');
+      setProductsError(error instanceof Error ? error.message : '加载商品数据失败');
       setProducts([]);
     } finally {
       setProductsLoading(false);
@@ -201,7 +233,7 @@ function App() {
 
   const openCreateProductModal = () => {
     setEditingProduct(null);
-    setProductForm({ name: '', sku: '', category: '', price: '', lowStockThreshold: '10', notes: '' });
+    setProductForm({ name: '', sku: '', category: '', price: '', notes: '' });
     setIsProductModalOpen(true);
   };
 
@@ -212,7 +244,6 @@ function App() {
       sku: product.sku,
       category: product.category,
       price: String(product.price),
-      lowStockThreshold: String(product.lowStockThreshold),
       notes: product.notes === '-' ? '' : product.notes,
     });
     setIsProductModalOpen(true);
@@ -260,12 +291,6 @@ function App() {
       return;
     }
 
-    const lowStockThreshold = Number(productForm.lowStockThreshold);
-    if (!Number.isInteger(lowStockThreshold) || lowStockThreshold < 0) {
-      window.alert('低库存阈值必须是大于等于 0 的整数');
-      return;
-    }
-
     const sku = productForm.sku.trim();
     if (sku) {
       const isSkuDuplicate = products.some(
@@ -289,7 +314,6 @@ function App() {
           sku: sku || null,
           category: productForm.category.trim(),
           price,
-          low_stock_threshold: lowStockThreshold,
           extra_info: productForm.notes.trim() || null,
         });
       } else {
@@ -298,7 +322,6 @@ function App() {
           sku: sku || null,
           category: productForm.category.trim(),
           price,
-          low_stock_threshold: lowStockThreshold,
           extra_info: productForm.notes.trim() || null,
         });
       }
@@ -327,69 +350,6 @@ function App() {
       await loadProducts();
     } catch (error) {
       window.alert(error instanceof Error ? error.message : '删除商品失败');
-    }
-  };
-
-  const openStockModal = (product: Product) => {
-    setAdjustingProduct(product);
-    setStockForm({ changeAmount: '', reason: '' });
-    setIsStockModalOpen(true);
-  };
-
-  const handleSubmitStockAdjust = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!adjustingProduct) return;
-
-    const id = Number(adjustingProduct.id);
-    if (!Number.isFinite(id)) {
-      window.alert('当前商品不是后端数据，无法调整库存');
-      return;
-    }
-
-    const changeAmount = Number(stockForm.changeAmount);
-    if (!Number.isInteger(changeAmount) || changeAmount === 0) {
-      window.alert('库存变更数量必须是非 0 整数（入库填正数，出库填负数）');
-      return;
-    }
-    if (!stockForm.reason.trim()) {
-      window.alert('请填写调整原因');
-      return;
-    }
-
-    setProductSubmitting(true);
-    try {
-      await api.products.adjustStock(id, {
-        change_amount: changeAmount,
-        reason: stockForm.reason.trim(),
-      });
-      setIsStockModalOpen(false);
-      await loadProducts();
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : '调整库存失败');
-    } finally {
-      setProductSubmitting(false);
-    }
-  };
-
-  const openInventoryLogs = async (product: Product) => {
-    const id = Number(product.id);
-    if (!Number.isFinite(id)) {
-      window.alert('当前商品不是后端数据，暂不支持查看库存日志');
-      return;
-    }
-
-    setLogProduct(product);
-    setInventoryLogs([]);
-    setInventoryLogsError('');
-    setInventoryLogsLoading(true);
-
-    try {
-      const rows = await api.products.inventoryLogs(id);
-      setInventoryLogs(rows);
-    } catch (error) {
-      setInventoryLogsError(error instanceof Error ? error.message : '加载库存日志失败');
-    } finally {
-      setInventoryLogsLoading(false);
     }
   };
 
@@ -435,23 +395,102 @@ function App() {
   };
 
   const openCreateOrder = () => {
-    setOrderCustomerId(customers.length > 0 ? customers[0].id : '');
-    setOrderItems([{ productId: products.length > 0 ? products[0].id : '', quantity: '1' }]);
+    // 按需求：创建订单时客户信息默认留空
+    setEditingOrderId(null);
+    setOrderCustomerId('');
+    setOrderCustomerName('');
+    setOrderCustomerPhone('');
+    setOrderCustomerNotes('');
+    setOrderItems([createEmptyOrderItemDraft()]);
+    setIsCustomerPickerOpen(false);
+    setActiveProductPickerIndex(null);
     setOrderNotes('');
     setIsCreateOrderOpen(true);
   };
 
-  const handleSubmitCreateOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!orderCustomerId) {
-      window.alert('请选择客户');
+  const closeOrderModal = () => {
+    setIsCreateOrderOpen(false);
+    setEditingOrderId(null);
+  };
+
+  const openEditOrder = async (orderId: string) => {
+    const id = Number(orderId);
+    if (!Number.isFinite(id)) {
+      window.alert('当前订单不是后端数据，无法编辑');
       return;
     }
+
+    try {
+      const detail = await api.orders.detail(id);
+      const matchedCustomer = customers.find((customer) => Number(customer.id) === detail.order.customer_id);
+
+      setEditingOrderId(id);
+      setOrderCustomerId(String(detail.order.customer_id));
+      setOrderCustomerName(matchedCustomer?.name ?? '');
+      setOrderCustomerPhone(matchedCustomer?.phone ?? '');
+      setOrderCustomerNotes(matchedCustomer?.notes ?? '');
+      setOrderItems(
+        detail.items.length > 0
+          ? detail.items.map((item) => {
+              const product = products.find((p) => Number(p.id) === item.product_id);
+              return {
+                productId: String(item.product_id),
+                quantity: String(item.quantity),
+                productQuery: product ? getOrderProductLabel(product) : `商品 #${item.product_id}`,
+                unitPrice: formatCurrencyText(item.unit_price),
+                paidPrice: formatCurrencyText(item.paid_price),
+              };
+            })
+          : [createEmptyOrderItemDraft()],
+      );
+      setOrderNotes(detail.order.notes ?? '');
+      setIsCustomerPickerOpen(false);
+      setActiveProductPickerIndex(null);
+      setIsCreateOrderOpen(true);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : '加载订单失败，无法编辑');
+    }
+  };
+
+  const handleDeleteOrder = async (orderId: string) => {
+    const id = Number(orderId);
+    if (!Number.isFinite(id)) {
+      window.alert('当前订单不是后端数据，无法删除');
+      return;
+    }
+
+    const ok = window.confirm(`确认删除订单 #${id} 吗？`);
+    if (!ok) return;
+
+    try {
+      await api.orders.remove(id);
+      if (detailOrder?.order.id === id) {
+        setDetailOrder(null);
+      }
+      await loadOrders(customers);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : '删除订单失败');
+    }
+  };
+
+  const handleSubmitOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const normalizedName = orderCustomerName.trim();
+    const normalizedPhone = orderCustomerPhone.trim();
+    const normalizedCustomerNotes = orderCustomerNotes.trim();
+
+    if (!normalizedName || !normalizedPhone) {
+      window.alert('请填写客户姓名和电话');
+      return;
+    }
+
     const parsedItems = orderItems
       .filter((item) => item.productId)
       .map((item) => ({
         product_id: Number(item.productId),
         quantity: Number(item.quantity),
+        paid_price: Number(item.paidPrice),
       }));
     if (parsedItems.length === 0) {
       window.alert('请至少添加一个商品');
@@ -462,27 +501,67 @@ function App() {
         window.alert('商品数量必须为正整数');
         return;
       }
-      const product = products.find((p) => p.id === String(item.product_id));
-      if (product && item.quantity > product.stock) {
-        window.alert(`商品「${product.name}」库存不足，当前库存：${product.stock}`);
+
+      if (!Number.isFinite(item.paid_price) || item.paid_price <= 0) {
+        window.alert('实付单价必须是大于 0 的数字');
         return;
       }
     }
 
-    const payload: CreateOrderPayload = {
-      customer_id: Number(orderCustomerId),
-      items: parsedItems,
-      notes: orderNotes.trim() || null,
-    };
-
     setOrderSubmitting(true);
     try {
-      await api.orders.create(payload);
-      setIsCreateOrderOpen(false);
-      // 重新加载订单和库存（创建订单会扣减库存）
-      await Promise.all([loadOrders(), loadProducts()]);
+      const matchedCustomerByPhone = customers.find(
+        (customer) => customer.phone.trim() === normalizedPhone,
+      );
+
+      let customerIdForOrder: number;
+      if (matchedCustomerByPhone) {
+        const matchedCustomerId = Number(matchedCustomerByPhone.id);
+        if (!Number.isFinite(matchedCustomerId)) {
+          throw new Error('匹配到的客户ID无效，无法提交订单');
+        }
+
+        const existingNotes = (matchedCustomerByPhone.notes ?? '').trim();
+        const shouldUpdateCustomer =
+          matchedCustomerByPhone.name !== normalizedName || existingNotes !== normalizedCustomerNotes;
+
+        if (shouldUpdateCustomer) {
+          await api.customers.update(matchedCustomerId, {
+            name: normalizedName,
+            phone: normalizedPhone,
+            notes: normalizedCustomerNotes || null,
+          });
+        }
+
+        customerIdForOrder = matchedCustomerId;
+        setOrderCustomerId(String(matchedCustomerId));
+      } else {
+        const created = await api.customers.create({
+          name: normalizedName,
+          phone: normalizedPhone,
+          notes: normalizedCustomerNotes || null,
+        });
+        customerIdForOrder = created.id;
+        setOrderCustomerId(String(created.id));
+      }
+
+      const payload: CreateOrderPayload | UpdateOrderPayload = {
+        customer_id: customerIdForOrder,
+        items: parsedItems,
+        notes: orderNotes.trim() || null,
+      };
+
+      if (editingOrderId !== null) {
+        await api.orders.update(editingOrderId, payload);
+      } else {
+        await api.orders.create(payload);
+      }
+
+      closeOrderModal();
+      // 重新加载客户/订单/商品（可能自动创建或更新了客户）
+      await Promise.all([loadCustomers(), loadOrders(), loadProducts()]);
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : '创建订单失败');
+      window.alert(error instanceof Error ? error.message : '提交订单失败');
     } finally {
       setOrderSubmitting(false);
     }
@@ -495,14 +574,14 @@ function App() {
 
   const menuItems = [
     { id: 'dashboard' as View, label: '仪表盘', icon: LayoutDashboard },
-    { id: 'inventory' as View, label: '库存管理', icon: Package },
+    { id: 'inventory' as View, label: '商品管理', icon: Package },
     { id: 'orders' as View, label: '订单管理', icon: ShoppingCart },
     { id: 'customers' as View, label: '客户列表', icon: Users },
   ];
 
   const titleMap: Record<View, string> = {
     dashboard: '仪表盘',
-    inventory: '库存管理',
+    inventory: '商品管理',
     orders: '订单管理',
     customers: '客户管理',
   };
@@ -553,6 +632,42 @@ function App() {
     );
   }, [orders, searchTerm]);
 
+  const filteredOrderCustomers = useMemo(() => {
+    const normalizedName = orderCustomerName.trim().toLowerCase();
+    const normalizedPhone = orderCustomerPhone.trim().toLowerCase();
+    if (!normalizedName && !normalizedPhone) return customers;
+
+    return customers.filter((c) => {
+      const matchName = !normalizedName || c.name.toLowerCase().includes(normalizedName);
+      const matchPhone = !normalizedPhone || c.phone.toLowerCase().includes(normalizedPhone);
+      return matchName && matchPhone;
+    });
+  }, [customers, orderCustomerName, orderCustomerPhone]);
+
+  const syncOrderCustomerIdByPhone = (phone: string) => {
+    const matchedByPhone = customers.find((customer) => customer.phone.trim() === phone.trim());
+    setOrderCustomerId(matchedByPhone?.id ?? '');
+  };
+
+  const handleCustomerFieldBlur = () => {
+    window.setTimeout(() => {
+      const activeElement = document.activeElement;
+      if (customerPickerRef.current && activeElement instanceof Node && customerPickerRef.current.contains(activeElement)) {
+        return;
+      }
+      setIsCustomerPickerOpen(false);
+    }, 0);
+  };
+
+  const filterOrderProducts = (query: string) => {
+    const normalizedSearch = query.trim().toLowerCase();
+    if (!normalizedSearch) return products;
+
+    return products.filter((p) =>
+      [p.name, p.category, p.sku, p.id].some((field) => field.toLowerCase().includes(normalizedSearch)),
+    );
+  };
+
   const renderContent = () => {
     switch (activeView) {
       case 'dashboard':
@@ -567,8 +682,6 @@ function App() {
             onSearchChange={handleSearchChange}
             onOpenCreateProduct={openCreateProductModal}
             onOpenEditProduct={openEditProductModal}
-            onOpenStockModal={openStockModal}
-            onOpenInventoryLogs={openInventoryLogs}
             onDeleteProduct={handleDeleteProduct}
           />
         );
@@ -583,6 +696,8 @@ function App() {
             ordersLoading={ordersLoading}
             ordersError={ordersError}
             onOpenOrderDetail={openOrderDetail}
+            onOpenEditOrder={openEditOrder}
+            onDeleteOrder={handleDeleteOrder}
             onOpenCreateOrder={openCreateOrder}
           />
         );
@@ -653,10 +768,10 @@ function App() {
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
               <h3 className="text-lg font-bold text-slate-900 flex items-center">
                 <ShoppingCart className="h-5 w-5 mr-2 text-blue-600" />
-                创建新订单
+                {editingOrderId !== null ? '编辑订单' : '创建新订单'}
               </h3>
               <button
-                onClick={() => setIsCreateOrderOpen(false)}
+                onClick={closeOrderModal}
                 className="text-slate-400 hover:text-slate-600"
                 aria-label="关闭创建订单弹窗"
                 title="关闭"
@@ -665,25 +780,129 @@ function App() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmitCreateOrder} className="flex-1 overflow-y-auto p-6 space-y-5">
+            <form onSubmit={handleSubmitOrder} className="flex-1 overflow-y-auto p-6 space-y-5">
               {/* 选择客户 */}
-              <div>
+              <div ref={customerPickerRef}>
                 <label className="block text-sm font-medium text-slate-700 mb-1">客户 <span className="text-red-500">*</span></label>
-                <select
-                  required
-                  value={orderCustomerId}
-                  onChange={(e) => setOrderCustomerId(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                >
-                  <option value="">— 请选择客户 —</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}（{c.phone}）
-                    </option>
-                  ))}
-                </select>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div className="relative">
+                    <input
+                      required
+                      type="text"
+                      value={orderCustomerName}
+                      onFocus={() => setIsCustomerPickerOpen(true)}
+                      onBlur={handleCustomerFieldBlur}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setOrderCustomerName(value);
+                        syncOrderCustomerIdByPhone(orderCustomerPhone);
+                      }}
+                      className="w-full px-4 py-2 pr-9 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                      placeholder="客户姓名"
+                    />
+                    {orderCustomerName && (
+                      <button
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => setOrderCustomerName('')}
+                        className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                        aria-label="清空客户姓名"
+                        title="清空"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      required
+                      type="text"
+                      value={orderCustomerPhone}
+                      onFocus={() => setIsCustomerPickerOpen(true)}
+                      onBlur={handleCustomerFieldBlur}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setOrderCustomerPhone(value);
+                        syncOrderCustomerIdByPhone(value);
+                      }}
+                      className="w-full px-4 py-2 pr-9 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                      placeholder="客户电话（按电话识别）"
+                    />
+                    {orderCustomerPhone && (
+                      <button
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          setOrderCustomerPhone('');
+                          syncOrderCustomerIdByPhone('');
+                        }}
+                        className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                        aria-label="清空客户电话"
+                        title="清空"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {isCustomerPickerOpen && customers.length > 0 && (
+                  <div className="z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                    {filteredOrderCustomers.length > 0 ? (
+                      filteredOrderCustomers.map((c) => {
+                        const selected = c.id === orderCustomerId;
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              setOrderCustomerId(c.id);
+                              setOrderCustomerName(c.name);
+                              setOrderCustomerPhone(c.phone);
+                              setOrderCustomerNotes(c.notes ?? '');
+                              setIsCustomerPickerOpen(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 ${selected ? 'bg-blue-50 text-blue-700 font-medium' : 'text-slate-700'}`}
+                          >
+                            <div>{getOrderCustomerLabel(c)}</div>
+                            {c.notes && <div className="text-xs text-slate-500 mt-0.5">备注：{c.notes}</div>}
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="px-3 py-2 text-sm text-slate-500">未找到匹配客户（提交时将按电话自动创建）</div>
+                    )}
+                  </div>
+                )}
+
+                <div className="relative mt-2">
+                  <textarea
+                    value={orderCustomerNotes}
+                    onChange={(e) => setOrderCustomerNotes(e.target.value)}
+                    className="w-full px-4 py-2 pr-9 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                    rows={2}
+                    placeholder="客户备注（提交订单时会自动写入/更新）"
+                  />
+                  {orderCustomerNotes && (
+                    <button
+                      type="button"
+                      onClick={() => setOrderCustomerNotes('')}
+                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                      aria-label="清空客户备注"
+                      title="清空"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+
                 {customers.length === 0 && (
                   <p className="text-xs text-amber-600 mt-1">⚠ 暂无客户数据，请先创建客户</p>
+                )}
+                {orderCustomerPhone.trim() && !orderCustomerId && (
+                  <p className="text-xs text-blue-600 mt-1">当前电话未匹配到客户，提交订单时将自动创建新客户</p>
                 )}
               </div>
 
@@ -693,7 +912,9 @@ function App() {
                   <label className="text-sm font-medium text-slate-700">商品明细 <span className="text-red-500">*</span></label>
                   <button
                     type="button"
-                    onClick={() => setOrderItems((prev) => [...prev, { productId: '', quantity: '1' }])}
+                    onClick={() =>
+                      setOrderItems((prev) => [...prev, createEmptyOrderItemDraft()])
+                    }
                     className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
                   >
                     <Plus className="h-3 w-3" /> 添加商品行
@@ -701,29 +922,166 @@ function App() {
                 </div>
                 <div className="space-y-2">
                   {orderItems.map((item, idx) => {
-                    const selectedProduct = products.find((p) => p.id === item.productId);
-                    const qty = Number(item.quantity);
-                    const stockOk = !selectedProduct || qty <= selectedProduct.stock;
+                    const matchedProducts = filterOrderProducts(item.productQuery);
                     return (
                       <div key={idx} className="flex gap-2 items-start">
                         {/* 商品选择 — 用商品名+分类消除重名歧义 */}
-                        <select
-                          value={item.productId}
-                          onChange={(e) =>
-                            setOrderItems((prev) =>
-                              prev.map((it, i) => (i === idx ? { ...it, productId: e.target.value } : it)),
-                            )
-                          }
-                          className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                        >
-                          <option value="">— 选择商品 —</option>
-                          {products.map((p) => (
-                            <option key={p.id} value={p.id} disabled={p.stock <= 0}>
-                              {p.name}【{p.category}】¥{p.price} · 库存 {p.stock}
-                              {p.stock <= 0 ? '（缺货）' : ''}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="relative flex-1">
+                          <input
+                            type="text"
+                            value={item.productQuery}
+                            onFocus={() => setActiveProductPickerIndex(idx)}
+                            onBlur={() => setActiveProductPickerIndex((current) => (current === idx ? null : current))}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const normalized = value.trim().toLowerCase();
+                              const exactMatchedProduct = products.find(
+                                (p) =>
+                                  (p.id.toLowerCase() === normalized ||
+                                    p.name.toLowerCase() === normalized ||
+                                    p.sku.toLowerCase() === normalized),
+                              );
+
+                              setOrderItems((prev) =>
+                                prev.map((it, i) =>
+                                  i === idx
+                                    ? {
+                                        ...it,
+                                        productQuery: value,
+                                        productId: exactMatchedProduct?.id ?? '',
+                                        unitPrice: exactMatchedProduct ? formatCurrencyText(exactMatchedProduct.price) : '',
+                                        paidPrice: exactMatchedProduct ? formatCurrencyText(exactMatchedProduct.price) : '',
+                                      }
+                                    : it,
+                                ),
+                              );
+                            }}
+                            className="w-full px-3 py-2 pr-9 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                            placeholder="输入商品名 / SKU / 分类搜索并选择"
+                          />
+
+                          {item.productQuery && (
+                            <button
+                              type="button"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => {
+                                setOrderItems((prev) =>
+                                  prev.map((it, i) =>
+                                    i === idx
+                                      ? {
+                                          ...it,
+                                          productQuery: '',
+                                          productId: '',
+                                          unitPrice: '',
+                                          paidPrice: '',
+                                        }
+                                      : it,
+                                  ),
+                                );
+                              }}
+                              className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                              aria-label="清空商品输入"
+                              title="清空"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+
+                          {activeProductPickerIndex === idx && (
+                            <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                              {matchedProducts.length > 0 ? (
+                                matchedProducts.map((p) => {
+                                  const selected = p.id === item.productId;
+                                  return (
+                                    <button
+                                      key={p.id}
+                                      type="button"
+                                      onMouseDown={(event) => {
+                                        event.preventDefault();
+                                        setOrderItems((prev) =>
+                                          prev.map((it, i) =>
+                                            i === idx
+                                              ? {
+                                                  ...it,
+                                                  productId: p.id,
+                                                  productQuery: getOrderProductLabel(p),
+                                                  unitPrice: formatCurrencyText(p.price),
+                                                  paidPrice: formatCurrencyText(p.price),
+                                                }
+                                              : it,
+                                          ),
+                                        );
+                                        setActiveProductPickerIndex(null);
+                                      }}
+                                      className={`w-full text-left px-3 py-2 text-sm ${
+                                        selected
+                                          ? 'bg-blue-50 text-blue-700 font-medium'
+                                          : 'text-slate-700 hover:bg-blue-50'
+                                      }`}
+                                    >
+                                      {getOrderProductLabel(p)}
+                                    </button>
+                                  );
+                                })
+                              ) : (
+                                <div className="px-3 py-2 text-sm text-slate-500">未找到匹配商品</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 标价（只读） */}
+                        <input
+                          type="number"
+                          readOnly
+                          value={item.unitPrice}
+                          className="w-28 px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-600"
+                          placeholder="标价"
+                        />
+
+                        {/* 实付单价 */}
+                        <div className="relative w-28">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={item.paidPrice}
+                            onChange={(e) => {
+                              const normalized = normalizeMoneyTextToFixed2(sanitizeMoneyTextInput(e.target.value));
+                              setOrderItems((prev) =>
+                                prev.map((it, i) => (i === idx ? { ...it, paidPrice: normalized } : it)),
+                              );
+                            }}
+                            onBlur={() => {
+                              setOrderItems((prev) =>
+                                prev.map((it, i) =>
+                                  i === idx
+                                    ? {
+                                        ...it,
+                                        paidPrice: normalizeMoneyTextToFixed2(it.paidPrice),
+                                      }
+                                    : it,
+                                ),
+                              );
+                            }}
+                            className="w-full px-3 py-2 pr-8 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                            placeholder="实付单价"
+                          />
+                          {item.paidPrice && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOrderItems((prev) =>
+                                  prev.map((it, i) => (i === idx ? { ...it, paidPrice: '' } : it)),
+                                )
+                              }
+                              className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                              aria-label="清空实付单价"
+                              title="清空"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
 
                         {/* 数量 */}
                         <input
@@ -736,7 +1094,7 @@ function App() {
                               prev.map((it, i) => (i === idx ? { ...it, quantity: e.target.value } : it)),
                             )
                           }
-                          className={`w-24 px-3 py-2 border rounded-lg focus:ring-2 outline-none text-sm ${stockOk ? 'border-slate-300 focus:ring-blue-500' : 'border-red-400 focus:ring-red-400'}`}
+                          className="w-24 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
                           placeholder="数量"
                         />
 
@@ -744,7 +1102,10 @@ function App() {
                         {orderItems.length > 1 && (
                           <button
                             type="button"
-                            onClick={() => setOrderItems((prev) => prev.filter((_, i) => i !== idx))}
+                            onClick={() => {
+                              setOrderItems((prev) => prev.filter((_, i) => i !== idx));
+                              setActiveProductPickerIndex((current) => (current === idx ? null : current));
+                            }}
                             className="p-2 text-slate-400 hover:text-red-500"
                             title="删除此行"
                           >
@@ -752,11 +1113,8 @@ function App() {
                           </button>
                         )}
 
-                        {/* 库存提示 */}
-                        {selectedProduct && (
-                          <span className={`pt-2 text-xs whitespace-nowrap ${stockOk ? 'text-slate-400' : 'text-red-500 font-medium'}`}>
-                            {stockOk ? `库存 ${selectedProduct.stock}` : `超出库存 ${selectedProduct.stock}`}
-                          </span>
+                        {!item.productId && item.productQuery.trim() && (
+                          <span className="pt-2 text-xs whitespace-nowrap text-amber-600">请选择有效商品</span>
                         )}
                       </div>
                     );
@@ -772,8 +1130,8 @@ function App() {
                     ¥{orderItems
                       .filter((it) => it.productId)
                       .reduce((acc, it) => {
-                        const p = products.find((prod) => prod.id === it.productId);
-                        return acc + (p ? p.price * (Number(it.quantity) || 0) : 0);
+                        const paidPrice = Number(it.paidPrice);
+                        return acc + (Number.isFinite(paidPrice) ? paidPrice : 0) * (Number(it.quantity) || 0);
                       }, 0)
                       .toFixed(2)}
                   </span>
@@ -783,19 +1141,32 @@ function App() {
               {/* 备注 */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">备注</label>
-                <textarea
-                  value={orderNotes}
-                  onChange={(e) => setOrderNotes(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                  rows={2}
-                  placeholder="可填写配送要求、取货方式等"
-                />
+                <div className="relative">
+                  <textarea
+                    value={orderNotes}
+                    onChange={(e) => setOrderNotes(e.target.value)}
+                    className="w-full px-4 py-2 pr-9 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                    rows={2}
+                    placeholder="可填写配送要求、取货方式等"
+                  />
+                  {orderNotes && (
+                    <button
+                      type="button"
+                      onClick={() => setOrderNotes('')}
+                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                      aria-label="清空订单备注"
+                      title="清空"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setIsCreateOrderOpen(false)}
+                  onClick={closeOrderModal}
                   className="px-5 py-2.5 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 text-sm"
                 >
                   取消
@@ -806,7 +1177,7 @@ function App() {
                   className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm flex items-center disabled:opacity-70"
                 >
                   {orderSubmitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-                  提交订单
+                  {editingOrderId !== null ? '保存订单' : '提交订单'}
                 </button>
               </div>
             </form>
@@ -835,37 +1206,76 @@ function App() {
             <form onSubmit={handleSubmitCustomer} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">姓名</label>
-                <input
-                  type="text"
-                  required
-                  value={customerForm.name}
-                  onChange={(e) => setCustomerForm((prev) => ({ ...prev, name: e.target.value }))}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="例如：张三"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    value={customerForm.name}
+                    onChange={(e) => setCustomerForm((prev) => ({ ...prev, name: e.target.value }))}
+                    className="w-full px-4 py-2 pr-9 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="例如：张三"
+                  />
+                  {customerForm.name && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomerForm((prev) => ({ ...prev, name: '' }))}
+                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                      aria-label="清空客户姓名输入"
+                      title="清空"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">电话</label>
-                <input
-                  type="tel"
-                  required
-                  value={customerForm.phone}
-                  onChange={(e) => setCustomerForm((prev) => ({ ...prev, phone: e.target.value }))}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="例如：13800000000"
-                />
+                <div className="relative">
+                  <input
+                    type="tel"
+                    required
+                    value={customerForm.phone}
+                    onChange={(e) => setCustomerForm((prev) => ({ ...prev, phone: e.target.value }))}
+                    className="w-full px-4 py-2 pr-9 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="例如：13800000000"
+                  />
+                  {customerForm.phone && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomerForm((prev) => ({ ...prev, phone: '' }))}
+                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                      aria-label="清空客户电话输入"
+                      title="清空"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">备注</label>
-                <textarea
-                  value={customerForm.notes}
-                  onChange={(e) => setCustomerForm((prev) => ({ ...prev, notes: e.target.value }))}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  rows={3}
-                  placeholder="可填写偏好、回访信息等"
-                />
+                <div className="relative">
+                  <textarea
+                    value={customerForm.notes}
+                    onChange={(e) => setCustomerForm((prev) => ({ ...prev, notes: e.target.value }))}
+                    className="w-full px-4 py-2 pr-9 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    rows={3}
+                    placeholder="可填写偏好、回访信息等"
+                  />
+                  {customerForm.notes && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomerForm((prev) => ({ ...prev, notes: '' }))}
+                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                      aria-label="清空客户备注输入"
+                      title="清空"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
@@ -990,38 +1400,77 @@ function App() {
             <form onSubmit={handleSubmitProduct} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">商品名称</label>
-                <input
-                  type="text"
-                  required
-                  value={productForm.name}
-                  onChange={(e) => setProductForm((prev) => ({ ...prev, name: e.target.value }))}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="例如：依视路防蓝光镜片"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    value={productForm.name}
+                    onChange={(e) => setProductForm((prev) => ({ ...prev, name: e.target.value }))}
+                    className="w-full px-4 py-2 pr-9 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="例如：依视路防蓝光镜片"
+                  />
+                  {productForm.name && (
+                    <button
+                      type="button"
+                      onClick={() => setProductForm((prev) => ({ ...prev, name: '' }))}
+                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                      aria-label="清空商品名称输入"
+                      title="清空"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">SKU (唯一标识)</label>
-                <input
-                  type="text"
-                  required
-                  value={productForm.sku}
-                  onChange={(e) => setProductForm((prev) => ({ ...prev, sku: e.target.value }))}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono"
-                  placeholder="例如：ESL-BL-01"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    value={productForm.sku}
+                    onChange={(e) => setProductForm((prev) => ({ ...prev, sku: e.target.value }))}
+                    className="w-full px-4 py-2 pr-9 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+                    placeholder="例如：ESL-BL-01"
+                  />
+                  {productForm.sku && (
+                    <button
+                      type="button"
+                      onClick={() => setProductForm((prev) => ({ ...prev, sku: '' }))}
+                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                      aria-label="清空SKU输入"
+                      title="清空"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">分类</label>
-                <input
-                  type="text"
-                  required
-                  value={productForm.category}
-                  onChange={(e) => setProductForm((prev) => ({ ...prev, category: e.target.value }))}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="例如：镜片 / 镜框 / 隐形眼镜"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    value={productForm.category}
+                    onChange={(e) => setProductForm((prev) => ({ ...prev, category: e.target.value }))}
+                    className="w-full px-4 py-2 pr-9 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="例如：镜片 / 镜框 / 隐形眼镜"
+                  />
+                  {productForm.category && (
+                    <button
+                      type="button"
+                      onClick={() => setProductForm((prev) => ({ ...prev, category: '' }))}
+                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                      aria-label="清空分类输入"
+                      title="清空"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -1039,28 +1488,27 @@ function App() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">低库存阈值</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  required
-                  value={productForm.lowStockThreshold}
-                  onChange={(e) => setProductForm((prev) => ({ ...prev, lowStockThreshold: e.target.value }))}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="例如：10"
-                />
-              </div>
-
-              <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">备注</label>
-                <textarea
-                  value={productForm.notes}
-                  onChange={(e) => setProductForm((prev) => ({ ...prev, notes: e.target.value }))}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  rows={3}
-                  placeholder="可填写规格、材质等"
-                />
+                <div className="relative">
+                  <textarea
+                    value={productForm.notes}
+                    onChange={(e) => setProductForm((prev) => ({ ...prev, notes: e.target.value }))}
+                    className="w-full px-4 py-2 pr-9 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    rows={3}
+                    placeholder="可填写规格、材质等"
+                  />
+                  {productForm.notes && (
+                    <button
+                      type="button"
+                      onClick={() => setProductForm((prev) => ({ ...prev, notes: '' }))}
+                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                      aria-label="清空商品备注输入"
+                      title="清空"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
@@ -1081,154 +1529,6 @@ function App() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {isStockModalOpen && adjustingProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="text-lg font-bold text-slate-900 flex items-center">
-                <Package className="h-5 w-5 mr-2 text-indigo-600" />
-                调整库存 · {adjustingProduct.name}
-              </h3>
-              <button
-                onClick={() => setIsStockModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
-                aria-label="关闭库存弹窗"
-                title="关闭库存弹窗"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmitStockAdjust} className="p-6 space-y-4">
-              <div className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                当前库存：<span className="font-semibold text-slate-900">{adjustingProduct.stock}</span>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">变更数量</label>
-                <input
-                  type="number"
-                  required
-                  step="1"
-                  value={stockForm.changeAmount}
-                  onChange={(e) => setStockForm((prev) => ({ ...prev, changeAmount: e.target.value }))}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="入库填正数，如 10；出库填负数，如 -2"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">调整原因</label>
-                <input
-                  type="text"
-                  required
-                  value={stockForm.reason}
-                  onChange={(e) => setStockForm((prev) => ({ ...prev, reason: e.target.value }))}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="例如：盘点补录 / 损耗出库 / 人工修正"
-                />
-              </div>
-
-              <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsStockModalOpen(false)}
-                  className="px-5 py-2.5 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 text-sm"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  disabled={productSubmitting}
-                  className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm flex items-center disabled:opacity-70"
-                >
-                  {productSubmitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-                  保存库存调整
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {logProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[85vh]">
-            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/80">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 flex items-center">
-                  <History className="h-5 w-5 mr-2 text-indigo-600" />
-                  库存变更日志 · {logProduct.name}
-                </h3>
-                <p className="text-xs text-slate-500 ml-7">商品ID：{logProduct.id}</p>
-              </div>
-              <button
-                onClick={() => setLogProduct(null)}
-                className="text-slate-400 hover:text-slate-600"
-                aria-label="关闭库存日志弹窗"
-                title="关闭库存日志弹窗"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto">
-              {inventoryLogsLoading ? (
-                <div className="flex items-center justify-center h-48">
-                  <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
-                </div>
-              ) : inventoryLogsError ? (
-                <div className="px-6 py-8 text-sm text-red-600">加载失败：{inventoryLogsError}</div>
-              ) : inventoryLogs.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-48 text-slate-500">
-                  <History className="h-10 w-10 mb-2 text-slate-300" />
-                  <p>暂无库存变更记录</p>
-                </div>
-              ) : (
-                <table className="min-w-full divide-y divide-slate-200">
-                  <thead className="bg-slate-50 sticky top-0">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">时间</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">变更数量</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">原因</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">关联订单</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-slate-200">
-                    {inventoryLogs.map((log) => (
-                      <tr key={log.id} className="hover:bg-slate-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                          {log.created_at ? log.created_at.slice(0, 19).replace('T', ' ') : '-'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold">
-                          <span className={log.change_amount >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
-                            {log.change_amount >= 0 ? '+' : ''}
-                            {log.change_amount}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700">{log.reason || '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                          {typeof log.reference_id === 'number' ? `#${log.reference_id}` : '-'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
-              <button
-                onClick={() => setLogProduct(null)}
-                className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 text-sm font-medium"
-              >
-                关闭
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -1273,7 +1573,7 @@ function App() {
                 <table className="min-w-full divide-y divide-slate-200">
                   <thead className="bg-slate-50 sticky top-0">
                     <tr>
-                      {['商品 ID', '商品名称', '单价', '数量', '小计'].map((h) => (
+                      {['商品 ID', '商品名称', '标价', '实付单价', '数量', '小计'].map((h) => (
                         <th key={h} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">{h}</th>
                       ))}
                     </tr>
@@ -1288,6 +1588,7 @@ function App() {
                             {product?.name ?? `商品 #${item.product_id}`}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">¥{item.unit_price.toFixed(2)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">¥{item.paid_price.toFixed(2)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{item.quantity}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-900">¥{item.subtotal.toFixed(2)}</td>
                         </tr>
@@ -1296,7 +1597,7 @@ function App() {
                   </tbody>
                   <tfoot className="bg-slate-50 border-t-2 border-slate-200">
                     <tr>
-                      <td colSpan={4} className="px-6 py-3 text-sm font-semibold text-slate-700 text-right">合计</td>
+                      <td colSpan={5} className="px-6 py-3 text-sm font-semibold text-slate-700 text-right">合计</td>
                       <td className="px-6 py-3 text-sm font-bold text-slate-900">¥{detailOrder.order.total_amount.toFixed(2)}</td>
                     </tr>
                   </tfoot>

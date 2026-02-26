@@ -9,11 +9,5 @@ export type ProductFormState = {
   sku: string;
   category: string;
   price: string;
-  lowStockThreshold: string;
   notes: string;
-};
-
-export type StockFormState = {
-  changeAmount: string;
-  reason: string;
 };

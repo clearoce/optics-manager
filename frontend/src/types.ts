@@ -3,9 +3,6 @@ export const Status = {
   Completed: '已完成',
   Cancelled: '已取消',
   Shipped: '已发货',
-  LowStock: '库存不足',
-  InStock: '库存充足',
-  OutOfStock: '缺货',
 } as const;
 
 export type Status = (typeof Status)[keyof typeof Status];
@@ -16,9 +13,6 @@ export interface Product {
   sku: string;
   category: string;
   price: number;
-  stock: number;
-  lowStockThreshold: number;
-  status: Status;
   notes: string;
   lastUpdated: string;
 }

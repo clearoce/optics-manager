@@ -1,4 +1,4 @@
-import { Clock, Filter, Plus, ShoppingBag, TrendingUp, X } from 'lucide-react';
+import { Clock, Edit, Filter, Plus, ShoppingBag, Trash2, TrendingUp, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Status, type Customer, type Order } from '../../types';
 import { SearchBar } from '../common/SearchBar';
@@ -13,6 +13,8 @@ type OrdersViewProps = {
   ordersLoading: boolean;
   ordersError: string;
   onOpenOrderDetail: (orderId: string) => void;
+  onOpenEditOrder: (orderId: string) => void;
+  onDeleteOrder: (orderId: string) => void;
   onOpenCreateOrder: () => void;
 };
 
@@ -25,6 +27,8 @@ export function OrdersView({
   ordersLoading,
   ordersError,
   onOpenOrderDetail,
+  onOpenEditOrder,
+  onDeleteOrder,
   onOpenCreateOrder,
 }: OrdersViewProps) {
   const [customerFilter, setCustomerFilter] = useState('');
@@ -94,6 +98,7 @@ export function OrdersView({
         <select
           value={customerFilter}
           onChange={(e) => setCustomerFilter(e.target.value)}
+          aria-label="按客户筛选订单"
           className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
         >
           <option value="">全部客户</option>
@@ -111,6 +116,7 @@ export function OrdersView({
             type="date"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
+            aria-label="开始日期"
             className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
           />
         </div>
@@ -122,6 +128,7 @@ export function OrdersView({
             type="date"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
+            aria-label="结束日期"
             className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
           />
         </div>
@@ -171,7 +178,7 @@ export function OrdersView({
           <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>
-                {['订单号', '客户', '金额', '日期', '备注'].map((h) => (
+                {['订单号', '客户', '金额', '日期', '备注', '操作'].map((h) => (
                   <th key={h} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
                     {h}
                   </th>
@@ -191,6 +198,34 @@ export function OrdersView({
                   <td className="px-6 py-4 text-sm font-semibold text-emerald-700">¥{o.total.toFixed(2)}</td>
                   <td className="px-6 py-4 text-sm text-slate-500">{o.date}</td>
                   <td className="px-6 py-4 text-sm text-slate-400 max-w-xs truncate">{o.notes || '-'}</td>
+                  <td className="px-6 py-4 text-sm text-slate-500">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onOpenEditOrder(o.id);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                        title="编辑订单"
+                      >
+                        <Edit className="h-3.5 w-3.5" />
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDeleteOrder(o.id);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                        title="删除订单"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        删除
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -1,4 +1,5 @@
 export const API_BASE_URL = 'http://localhost:8080/api';
+const PRODUCT_LOW_STOCK_THRESHOLD_COMPAT_VALUE = 10;
 
 type ApiSuccess<T> = {
   success: true;
@@ -47,6 +48,7 @@ export interface OrderItemDTO {
   product_id: number;
   quantity: number;
   unit_price: number;
+  paid_price: number;
   subtotal: number;
 }
 
@@ -58,9 +60,17 @@ export interface OrderDetailDTO {
 export interface CreateOrderItemPayload {
   product_id: number;
   quantity: number;
+  paid_price: number;
 }
 
 export interface CreateOrderPayload {
+  customer_id: number;
+  items: CreateOrderItemPayload[];
+  notes?: string | null;
+  extra_info?: string | null;
+}
+
+export interface UpdateOrderPayload {
   customer_id: number;
   items: CreateOrderItemPayload[];
   notes?: string | null;
@@ -73,8 +83,6 @@ export interface ProductDTO {
   category: string;
   sku?: string | null;
   price: number;
-  stock_quantity: number;
-  low_stock_threshold: number;
   extra_info?: string | null;
   created_at?: string;
 }
@@ -84,7 +92,6 @@ export interface CreateProductPayload {
   category: string;
   sku?: string | null;
   price: number;
-  low_stock_threshold: number;
   extra_info?: string | null;
 }
 
@@ -93,22 +100,7 @@ export interface UpdateProductPayload {
   sku?: string | null;
   category: string;
   price: number;
-  low_stock_threshold: number;
   extra_info?: string | null;
-}
-
-export interface AdjustStockPayload {
-  change_amount: number;
-  reason: string;
-}
-
-export interface InventoryLogDTO {
-  id: number;
-  product_id: number;
-  change_amount: number;
-  reason: string;
-  reference_id?: number | null;
-  created_at?: string;
 }
 
 type RawCustomer = {
@@ -157,6 +149,9 @@ type RawOrderItem = {
   unit_price?: number;
   unitPrice?: number;
   UnitPrice?: number;
+  paid_price?: number;
+  paidPrice?: number;
+  PaidPrice?: number;
   subtotal?: number;
   Subtotal?: number;
 };
@@ -179,34 +174,9 @@ type RawProduct = {
   SKU?: string | null;
   price?: number;
   Price?: number;
-  stock_quantity?: number;
-  stockQuantity?: number;
-  StockQuantity?: number;
-  low_stock_threshold?: number;
-  lowStockThreshold?: number;
-  LowStockThreshold?: number;
   extra_info?: string | null;
   extraInfo?: string | null;
   ExtraInfo?: string | null;
-  created_at?: string;
-  createdAt?: string;
-  CreatedAt?: string;
-};
-
-type RawInventoryLog = {
-  id?: number;
-  ID?: number;
-  product_id?: number;
-  productId?: number;
-  ProductID?: number;
-  change_amount?: number;
-  changeAmount?: number;
-  ChangeAmount?: number;
-  reason?: string;
-  Reason?: string;
-  reference_id?: number | null;
-  referenceId?: number | null;
-  ReferenceID?: number | null;
   created_at?: string;
   createdAt?: string;
   CreatedAt?: string;
@@ -299,6 +269,14 @@ export const api = {
           product_id: item.product_id ?? item.productId ?? item.ProductID ?? 0,
           quantity: item.quantity ?? item.Quantity ?? 0,
           unit_price: item.unit_price ?? item.unitPrice ?? item.UnitPrice ?? 0,
+          paid_price:
+            item.paid_price ??
+            item.paidPrice ??
+            item.PaidPrice ??
+            item.unit_price ??
+            item.unitPrice ??
+            item.UnitPrice ??
+            0,
           subtotal: item.subtotal ?? item.Subtotal ?? 0,
         })),
       } satisfies OrderDetailDTO;
@@ -308,6 +286,19 @@ export const api = {
       return request<{ order_id: number; total_amount: number; message: string }>('/orders', {
         method: 'POST',
         body: JSON.stringify(payload),
+      });
+    },
+
+    update: async (id: number, payload: UpdateOrderPayload) => {
+      return request<{ message: string; total_amount: number }>(`/orders/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    remove: async (id: number) => {
+      return request<{ message: string }>(`/orders/${id}`, {
+        method: 'DELETE',
       });
     },
   },
@@ -322,8 +313,6 @@ export const api = {
         category: row.category ?? row.Category ?? '',
         sku: row.sku ?? row.SKU ?? null,
         price: row.price ?? row.Price ?? 0,
-        stock_quantity: row.stock_quantity ?? row.stockQuantity ?? row.StockQuantity ?? 0,
-        low_stock_threshold: row.low_stock_threshold ?? row.lowStockThreshold ?? row.LowStockThreshold ?? 10,
         extra_info: row.extra_info ?? row.extraInfo ?? row.ExtraInfo ?? null,
         created_at: row.created_at ?? row.createdAt ?? row.CreatedAt,
       } satisfies ProductDTO));
@@ -332,14 +321,20 @@ export const api = {
     create: async (payload: CreateProductPayload) => {
       return request<{ id: number; message: string }>('/products', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          low_stock_threshold: PRODUCT_LOW_STOCK_THRESHOLD_COMPAT_VALUE,
+        }),
       });
     },
 
     update: async (id: number, payload: UpdateProductPayload) => {
       return request<{ message: string }>(`/products/${id}`, {
         method: 'PUT',
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          low_stock_threshold: PRODUCT_LOW_STOCK_THRESHOLD_COMPAT_VALUE,
+        }),
       });
     },
 
@@ -347,25 +342,6 @@ export const api = {
       return request<{ message: string }>(`/products/${id}`, {
         method: 'DELETE',
       });
-    },
-
-    adjustStock: async (id: number, payload: AdjustStockPayload) => {
-      return request<{ message: string }>(`/products/${id}/stock`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-    },
-
-    inventoryLogs: async (id: number) => {
-      const rows = await request<RawInventoryLog[]>(`/products/${id}/inventory-logs`);
-      return rows.map((row, index) => ({
-        id: row.id ?? row.ID ?? index,
-        product_id: row.product_id ?? row.productId ?? row.ProductID ?? id,
-        change_amount: row.change_amount ?? row.changeAmount ?? row.ChangeAmount ?? 0,
-        reason: row.reason ?? row.Reason ?? '-',
-        reference_id: row.reference_id ?? row.referenceId ?? row.ReferenceID ?? null,
-        created_at: row.created_at ?? row.createdAt ?? row.CreatedAt,
-      } satisfies InventoryLogDTO));
     },
   },
 };

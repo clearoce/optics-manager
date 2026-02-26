@@ -19,7 +19,8 @@ type OrderItem struct {
 	OrderID   int64   `db:"order_id"`
 	ProductID int64   `db:"product_id"`
 	Quantity  int     `db:"quantity"`
-	UnitPrice float64 `db:"unit_price"`
+	UnitPrice float64 `db:"unit_price"` // 标价快照
+	PaidPrice float64 `db:"paid_price"` // 实付单价
 	Subtotal  float64 `db:"subtotal"`
 }
 
