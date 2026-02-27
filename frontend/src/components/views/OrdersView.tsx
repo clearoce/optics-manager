@@ -31,28 +31,57 @@ export function OrdersView({
   onDeleteOrder,
   onOpenCreateOrder,
 }: OrdersViewProps) {
-  const [customerFilter, setCustomerFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [amountMin, setAmountMin] = useState('');
+  const [amountMax, setAmountMax] = useState('');
+
+  const customerPhoneById = useMemo(() => {
+    return new Map(customers.map((customer) => [customer.id, customer.phone]));
+  }, [customers]);
 
   const totalRevenue = orders.reduce((acc, curr) => acc + curr.total, 0);
 
   // 在 filteredOrders（已按搜索词过滤）基础上再叠加本地筛选
   const displayOrders = useMemo(() => {
+    const minAmount = amountMin.trim() === '' ? null : Number(amountMin);
+    const maxAmount = amountMax.trim() === '' ? null : Number(amountMax);
+
     return filteredOrders.filter((o) => {
-      if (customerFilter && o.customerId !== customerFilter) return false;
       if (dateFrom && o.date < dateFrom) return false;
       if (dateTo && o.date > dateTo) return false;
+      if (minAmount !== null && Number.isFinite(minAmount) && o.total < minAmount) return false;
+      if (maxAmount !== null && Number.isFinite(maxAmount) && o.total > maxAmount) return false;
       return true;
     });
-  }, [filteredOrders, customerFilter, dateFrom, dateTo]);
+  }, [filteredOrders, dateFrom, dateTo, amountMin, amountMax]);
 
-  const hasActiveFilter = customerFilter || dateFrom || dateTo;
+  const filteredRevenue = useMemo(
+    () => displayOrders.reduce((acc, curr) => acc + curr.total, 0),
+    [displayOrders],
+  );
+
+  const hasActiveFilter = dateFrom || dateTo || amountMin || amountMax;
   const clearFilters = () => {
-    setCustomerFilter('');
     setDateFrom('');
     setDateTo('');
-    onSearchChange('');
+    setAmountMin('');
+    setAmountMax('');
+  };
+
+  const getStatusClassName = (status: Status) => {
+    switch (status) {
+      case Status.Pending:
+        return 'bg-amber-50 text-amber-700 border border-amber-200';
+      case Status.Completed:
+        return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+      case Status.Cancelled:
+        return 'bg-rose-50 text-rose-700 border border-rose-200';
+      case Status.Shipped:
+        return 'bg-indigo-50 text-indigo-700 border border-indigo-200';
+      default:
+        return 'bg-slate-100 text-slate-700 border border-slate-200';
+    }
   };
 
   return (
@@ -60,21 +89,18 @@ export function OrdersView({
       {/* 标题行 */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h2 className="text-2xl font-bold text-slate-900">订单管理</h2>
-        <div className="flex items-center gap-2">
-          <SearchBar value={searchTerm} onChange={onSearchChange} placeholder="搜索订单号或客户名..." />
-          <button
-            onClick={onOpenCreateOrder}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors whitespace-nowrap"
-          >
-            <Plus className="h-4 w-4" />
-            新建订单
-          </button>
-        </div>
+        <button
+          onClick={onOpenCreateOrder}
+          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors whitespace-nowrap"
+        >
+          <Plus className="h-4 w-4" />
+          新建订单
+        </button>
       </div>
 
       {/* 统计卡片 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="总收入" value={`¥${totalRevenue.toFixed(0)}`} icon={<TrendingUp className="h-6 w-6 text-green-600" />} tip="订单口径" />
+        <StatCard title="总实收" value={`¥${totalRevenue.toFixed(0)}`} icon={<TrendingUp className="h-6 w-6 text-green-600" />} tip="实收金额口径" />
         <StatCard title="订单总数" value={`${orders.length}`} icon={<ShoppingBag className="h-6 w-6 text-blue-600" />} tip="全部订单" />
         <StatCard
           title="待处理"
@@ -86,28 +112,13 @@ export function OrdersView({
           title="平均客单价"
           value={`¥${orders.length > 0 ? (totalRevenue / orders.length).toFixed(0) : '0'}`}
           icon={<Filter className="h-6 w-6 text-indigo-600" />}
-          tip="全部口径"
+          tip="实收金额口径"
         />
       </div>
 
       {/* 筛选条 */}
       <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 flex flex-wrap items-center gap-3">
         <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">筛选</span>
-
-        {/* 按客户 */}
-        <select
-          value={customerFilter}
-          onChange={(e) => setCustomerFilter(e.target.value)}
-          aria-label="按客户筛选订单"
-          className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-        >
-          <option value="">全部客户</option>
-          {customers.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}（{c.phone}）
-            </option>
-          ))}
-        </select>
 
         {/* 按日期起 */}
         <div className="flex items-center gap-1.5">
@@ -133,6 +144,35 @@ export function OrdersView({
           />
         </div>
 
+        <div className="flex items-center gap-1.5">
+          <label className="text-xs text-slate-500">金额</label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={amountMin}
+            onChange={(event) => setAmountMin(event.target.value)}
+            className="w-28 border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder="最小"
+            aria-label="最小金额"
+          />
+          <span className="text-slate-400 text-xs">~</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={amountMax}
+            onChange={(event) => setAmountMax(event.target.value)}
+            className="w-28 border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder="最大"
+            aria-label="最大金额"
+          />
+        </div>
+
+        <div className="w-full sm:w-auto sm:min-w-[280px] md:min-w-[320px]">
+          <SearchBar value={searchTerm} onChange={onSearchChange} placeholder="搜索客户名、电话或备注..." />
+        </div>
+
         {/* 清除 */}
         {hasActiveFilter && (
           <button
@@ -144,10 +184,13 @@ export function OrdersView({
           </button>
         )}
 
-        <span className="ml-auto text-xs text-slate-400">
-          共 {displayOrders.length} 条
-          {hasActiveFilter && ` / 共 ${orders.length} 条`}
-        </span>
+        <div className="ml-auto text-right text-xs">
+          <div className="text-slate-600">筛选实收：¥{filteredRevenue.toFixed(2)}</div>
+          <div className="text-slate-400">
+            共 {displayOrders.length} 条
+            {hasActiveFilter && ` / 共 ${orders.length} 条`}
+          </div>
+        </div>
       </div>
 
       {/* 表格 */}
@@ -178,7 +221,7 @@ export function OrdersView({
           <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>
-                {['订单号', '客户', '金额', '日期', '备注', '操作'].map((h) => (
+                {['订单号', '客户', '电话', '状态', '实收金额', '日期', '备注', '操作'].map((h) => (
                   <th key={h} className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">
                     {h}
                   </th>
@@ -195,6 +238,12 @@ export function OrdersView({
                 >
                   <td className="px-6 py-4 text-xs font-mono text-slate-600">#{o.id}</td>
                   <td className="px-6 py-4 text-sm text-slate-900">{o.customerName}</td>
+                  <td className="px-6 py-4 text-sm text-slate-500">{(o.customerId && customerPhoneById.get(o.customerId)) || '-'}</td>
+                  <td className="px-6 py-4 text-sm">
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${getStatusClassName(o.status)}`}>
+                      {o.status}
+                    </span>
+                  </td>
                   <td className="px-6 py-4 text-sm font-semibold text-emerald-700">¥{o.total.toFixed(2)}</td>
                   <td className="px-6 py-4 text-sm text-slate-500">{o.date}</td>
                   <td className="px-6 py-4 text-sm text-slate-400 max-w-xs truncate">{o.notes || '-'}</td>

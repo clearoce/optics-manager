@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"optics-manager/database"
 	"optics-manager/handlers"
+	"optics-manager/services"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,12 @@ func main() {
 	database.Init("optics.db")
 	database.Migrate()
 	database.StartAutoBackup()
+
+	handlers.InitServices(handlers.Dependencies{
+		CustomerService: services.NewCustomerService(database.DB),
+		ProductService:  services.NewProductService(database.DB),
+		OrderService:    services.NewOrderService(database.DB),
+	})
 
 	r := gin.Default()
 

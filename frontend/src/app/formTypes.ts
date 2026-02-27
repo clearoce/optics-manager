@@ -11,3 +11,11 @@ export type ProductFormState = {
   price: string;
   notes: string;
 };
+
+export type OrderItemDraft = {
+  productId: string;
+  quantity: string;
+  productQuery: string;
+  unitPrice: string;
+  paidPrice: string;
+};

@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 )
 
@@ -31,7 +32,8 @@ func Migrate() {
 			sku            TEXT     NOT NULL UNIQUE,
 			price          REAL     NOT NULL,
 			extra_info     TEXT,
-			created_at     DATETIME DEFAULT (datetime('now', '+8 hours'))
+			created_at     DATETIME DEFAULT (datetime('now', '+8 hours')),
+			deleted_at     DATETIME
 		)`,
 
 		// ---- 订单表 ----
@@ -50,6 +52,9 @@ func Migrate() {
 			id         INTEGER PRIMARY KEY AUTOINCREMENT,
 			order_id   INTEGER NOT NULL,
 			product_id INTEGER NOT NULL,
+			product_name_snapshot TEXT NOT NULL,
+			product_sku_snapshot TEXT,
+			product_category_snapshot TEXT NOT NULL,
 			quantity   INTEGER NOT NULL DEFAULT 1,
 			unit_price REAL    NOT NULL,
 			paid_price REAL    NOT NULL,
@@ -70,39 +75,22 @@ func Migrate() {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
 
+	if err := ensureProductsDeletedAtColumn(); err != nil {
+		log.Fatalf("数据库迁移失败: %v", err)
+	}
+
+	if err := ensureOrderItemsSnapshotColumns(); err != nil {
+		log.Fatalf("数据库迁移失败: %v", err)
+	}
+
 	log.Println("数据库迁移完成，所有表已就绪")
 }
 
 func ensureOrderItemsPaidPriceColumn() error {
-	rows, err := DB.Query(`PRAGMA table_info(order_items)`)
+	hasPaidPrice, err := hasColumn("order_items", "paid_price")
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-
-	hasPaidPrice := false
-	for rows.Next() {
-		var (
-			cid          int
-			name         string
-			columnType   string
-			notNull      int
-			defaultValue sql.NullString
-			pk           int
-		)
-		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
-			return err
-		}
-		if name == "paid_price" {
-			hasPaidPrice = true
-			break
-		}
-	}
-
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
 	if hasPaidPrice {
 		return nil
 	}
@@ -117,4 +105,117 @@ func ensureOrderItemsPaidPriceColumn() error {
 
 	log.Println("已为 order_items 表补齐 paid_price 字段")
 	return nil
+}
+
+func ensureProductsDeletedAtColumn() error {
+	hasDeletedAt, err := hasColumn("products", "deleted_at")
+	if err != nil {
+		return err
+	}
+	if hasDeletedAt {
+		return nil
+	}
+
+	if _, err := DB.Exec(`ALTER TABLE products ADD COLUMN deleted_at DATETIME`); err != nil {
+		return err
+	}
+
+	log.Println("已为 products 表补齐 deleted_at 字段")
+	return nil
+}
+
+func ensureOrderItemsSnapshotColumns() error {
+	type snapshotColumn struct {
+		name string
+		sql  string
+		log  string
+	}
+
+	columns := []snapshotColumn{
+		{
+			name: "product_name_snapshot",
+			sql:  `ALTER TABLE order_items ADD COLUMN product_name_snapshot TEXT NOT NULL DEFAULT ''`,
+			log:  "已为 order_items 表补齐 product_name_snapshot 字段",
+		},
+		{
+			name: "product_sku_snapshot",
+			sql:  `ALTER TABLE order_items ADD COLUMN product_sku_snapshot TEXT`,
+			log:  "已为 order_items 表补齐 product_sku_snapshot 字段",
+		},
+		{
+			name: "product_category_snapshot",
+			sql:  `ALTER TABLE order_items ADD COLUMN product_category_snapshot TEXT NOT NULL DEFAULT ''`,
+			log:  "已为 order_items 表补齐 product_category_snapshot 字段",
+		},
+	}
+
+	for _, column := range columns {
+		hasColumnValue, err := hasColumn("order_items", column.name)
+		if err != nil {
+			return err
+		}
+		if hasColumnValue {
+			continue
+		}
+
+		if _, err := DB.Exec(column.sql); err != nil {
+			return err
+		}
+		log.Println(column.log)
+	}
+
+	if _, err := DB.Exec(`UPDATE order_items
+		SET
+			product_name_snapshot = COALESCE(
+				NULLIF(product_name_snapshot, ''),
+				(SELECT p.name FROM products p WHERE p.id = order_items.product_id),
+				''
+			),
+			product_sku_snapshot = COALESCE(
+				product_sku_snapshot,
+				(SELECT p.sku FROM products p WHERE p.id = order_items.product_id)
+			),
+			product_category_snapshot = COALESCE(
+				NULLIF(product_category_snapshot, ''),
+				(SELECT p.category FROM products p WHERE p.id = order_items.product_id),
+				''
+			)
+	`); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func hasColumn(tableName string, columnName string) (bool, error) {
+	rows, err := DB.Query(fmt.Sprintf("PRAGMA table_info(%s)", tableName))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	hasColumnValue := false
+	for rows.Next() {
+		var (
+			cid          int
+			name         string
+			columnType   string
+			notNull      int
+			defaultValue sql.NullString
+			pk           int
+		)
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			return false, err
+		}
+		if name == columnName {
+			hasColumnValue = true
+			break
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+
+	return hasColumnValue, nil
 }

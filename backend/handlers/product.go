@@ -1,9 +1,9 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
-	"optics-manager/database"
-	"optics-manager/models"
+	"optics-manager/services"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -25,83 +25,82 @@ type UpdateProductRequest struct {
 }
 
 func CreateProduct(c *gin.Context) {
+	deps, ok := getDeps(c)
+	if !ok {
+		return
+	}
+
 	var req CreateProductRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		errorResponse(c, http.StatusBadRequest, "请求数据格式错误: "+err.Error())
 		return
 	}
 
-	result, err := database.DB.Exec(
-		`INSERT INTO products (name, category, sku, price, extra_info) VALUES (?, ?, ?, ?, ?)`,
-		req.Name, req.Category, req.SKU, req.Price, req.ExtraInfo,
-	)
+	newID, err := deps.ProductService.CreateProduct(c.Request.Context(), services.ProductCreateInput{
+		Name:      req.Name,
+		Category:  req.Category,
+		SKU:       req.SKU,
+		Price:     req.Price,
+		ExtraInfo: req.ExtraInfo,
+	})
 	if err != nil {
+		if errors.Is(err, services.ErrProductSKUAlreadyExists) {
+			errorResponse(c, http.StatusBadRequest, "SKU 已存在：可修改 SKU，或直接使用该 SKU 以恢复已删除商品")
+			return
+		}
 		errorResponse(c, http.StatusInternalServerError, "新增商品失败: "+err.Error())
 		return
 	}
 
-	newID, _ := result.LastInsertId()
 	successResponse(c, gin.H{"id": newID, "message": "商品创建成功"})
 }
 
 func GetProducts(c *gin.Context) {
-	category := c.Query("category")
-
-	query := `SELECT id, name, category, sku, price, extra_info, created_at FROM products ORDER BY created_at DESC`
-	args := []any{}
-	if category != "" {
-		query = `SELECT id, name, category, sku, price, extra_info, created_at FROM products WHERE category = ? ORDER BY created_at DESC`
-		args = append(args, category)
+	deps, ok := getDeps(c)
+	if !ok {
+		return
 	}
 
-	rows, err := database.DB.Query(query, args...)
+	products, err := deps.ProductService.GetProducts(c.Request.Context(), c.Query("category"))
 	if err != nil {
 		errorResponse(c, http.StatusInternalServerError, "查询商品列表失败: "+err.Error())
 		return
-	}
-	defer rows.Close()
-
-	products := []models.Product{}
-	for rows.Next() {
-		var p models.Product
-		var createdAtStr string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Category, &p.SKU, &p.Price, &p.ExtraInfo, &createdAtStr); err != nil {
-			errorResponse(c, http.StatusInternalServerError, "解析商品数据失败: "+err.Error())
-			return
-		}
-		if t, err := database.ParseTime(createdAtStr); err == nil {
-			p.CreatedAt = t
-		}
-		products = append(products, p)
 	}
 
 	successResponse(c, products)
 }
 
 func GetProductByID(c *gin.Context) {
+	deps, ok := getDeps(c)
+	if !ok {
+		return
+	}
+
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		errorResponse(c, http.StatusBadRequest, "无效的商品ID")
 		return
 	}
 
-	var p models.Product
-	var createdAtStr string
-	err = database.DB.QueryRow(
-		`SELECT id, name, category, sku, price, extra_info, created_at FROM products WHERE id = ?`, id,
-	).Scan(&p.ID, &p.Name, &p.Category, &p.SKU, &p.Price, &p.ExtraInfo, &createdAtStr)
+	product, err := deps.ProductService.GetProductByID(c.Request.Context(), id)
 	if err != nil {
-		errorResponse(c, http.StatusNotFound, "商品不存在")
+		if errors.Is(err, services.ErrProductNotFound) {
+			errorResponse(c, http.StatusNotFound, "商品不存在")
+			return
+		}
+		errorResponse(c, http.StatusInternalServerError, "查询商品失败: "+err.Error())
 		return
 	}
-	if t, err := database.ParseTime(createdAtStr); err == nil {
-		p.CreatedAt = t
-	}
 
-	successResponse(c, p)
+	successResponse(c, product)
 }
 
 func UpdateProduct(c *gin.Context) {
+	deps, ok := getDeps(c)
+	if !ok {
+		return
+	}
+
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		errorResponse(c, http.StatusBadRequest, "无效的商品ID")
@@ -114,18 +113,18 @@ func UpdateProduct(c *gin.Context) {
 		return
 	}
 
-	result, err := database.DB.Exec(
-		`UPDATE products SET name = ?, category = ?, price = ?, extra_info = ? WHERE id = ?`,
-		req.Name, req.Category, req.Price, req.ExtraInfo, id,
-	)
+	err = deps.ProductService.UpdateProduct(c.Request.Context(), id, services.ProductUpdateInput{
+		Name:      req.Name,
+		Category:  req.Category,
+		Price:     req.Price,
+		ExtraInfo: req.ExtraInfo,
+	})
 	if err != nil {
+		if errors.Is(err, services.ErrProductNotFound) {
+			errorResponse(c, http.StatusNotFound, "商品不存在")
+			return
+		}
 		errorResponse(c, http.StatusInternalServerError, "更新商品信息失败: "+err.Error())
-		return
-	}
-
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		errorResponse(c, http.StatusNotFound, "商品不存在")
 		return
 	}
 
@@ -133,41 +132,25 @@ func UpdateProduct(c *gin.Context) {
 }
 
 func DeleteProduct(c *gin.Context) {
+	deps, ok := getDeps(c)
+	if !ok {
+		return
+	}
+
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		errorResponse(c, http.StatusBadRequest, "无效的商品ID")
 		return
 	}
 
-	var exists int
-	if err := database.DB.QueryRow(`SELECT COUNT(1) FROM products WHERE id = ?`, id).Scan(&exists); err != nil {
-		errorResponse(c, http.StatusInternalServerError, "校验商品失败: "+err.Error())
-		return
-	}
-	if exists == 0 {
-		errorResponse(c, http.StatusNotFound, "商品不存在")
-		return
-	}
-
-	var orderItemCount int
-	if err := database.DB.QueryRow(`SELECT COUNT(1) FROM order_items WHERE product_id = ?`, id).Scan(&orderItemCount); err != nil {
-		errorResponse(c, http.StatusInternalServerError, "校验商品订单关联失败: "+err.Error())
-		return
-	}
-	if orderItemCount > 0 {
-		errorResponse(c, http.StatusBadRequest, "该商品已有订单记录，不能删除")
-		return
-	}
-
-	result, err := database.DB.Exec(`DELETE FROM products WHERE id = ?`, id)
+	err = deps.ProductService.DeleteProduct(c.Request.Context(), id)
 	if err != nil {
-		errorResponse(c, http.StatusInternalServerError, "删除商品失败: "+err.Error())
-		return
-	}
-
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		errorResponse(c, http.StatusNotFound, "商品不存在")
+		switch {
+		case errors.Is(err, services.ErrProductNotFound):
+			errorResponse(c, http.StatusNotFound, "商品不存在")
+		default:
+			errorResponse(c, http.StatusInternalServerError, "删除商品失败: "+err.Error())
+		}
 		return
 	}
 

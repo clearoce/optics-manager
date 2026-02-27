@@ -46,6 +46,9 @@ export interface OrderItemDTO {
   id: number;
   order_id: number;
   product_id: number;
+  product_name_snapshot: string;
+  product_sku_snapshot?: string | null;
+  product_category_snapshot: string;
   quantity: number;
   unit_price: number;
   paid_price: number;
@@ -65,6 +68,7 @@ export interface CreateOrderItemPayload {
 
 export interface CreateOrderPayload {
   customer_id: number;
+  total_amount: number;
   items: CreateOrderItemPayload[];
   notes?: string | null;
   extra_info?: string | null;
@@ -72,6 +76,7 @@ export interface CreateOrderPayload {
 
 export interface UpdateOrderPayload {
   customer_id: number;
+  total_amount: number;
   items: CreateOrderItemPayload[];
   notes?: string | null;
   extra_info?: string | null;
@@ -144,6 +149,15 @@ type RawOrderItem = {
   product_id?: number;
   productId?: number;
   ProductID?: number;
+  product_name_snapshot?: string;
+  productNameSnapshot?: string;
+  ProductNameSnapshot?: string;
+  product_sku_snapshot?: string | null;
+  productSKUSnapshot?: string | null;
+  ProductSKUSnapshot?: string | null;
+  product_category_snapshot?: string;
+  productCategorySnapshot?: string;
+  ProductCategorySnapshot?: string;
   quantity?: number;
   Quantity?: number;
   unit_price?: number;
@@ -263,22 +277,40 @@ export const api = {
           notes: order.notes ?? order.Notes ?? null,
           extra_info: order.extra_info ?? order.extraInfo ?? order.ExtraInfo ?? null,
         },
-        items: items.map((item, index) => ({
-          id: item.id ?? item.ID ?? index,
-          order_id: item.order_id ?? item.orderId ?? item.OrderID ?? id,
-          product_id: item.product_id ?? item.productId ?? item.ProductID ?? 0,
-          quantity: item.quantity ?? item.Quantity ?? 0,
-          unit_price: item.unit_price ?? item.unitPrice ?? item.UnitPrice ?? 0,
-          paid_price:
-            item.paid_price ??
-            item.paidPrice ??
-            item.PaidPrice ??
-            item.unit_price ??
-            item.unitPrice ??
-            item.UnitPrice ??
-            0,
-          subtotal: item.subtotal ?? item.Subtotal ?? 0,
-        })),
+        items: items.map((item, index) => {
+          const productId = item.product_id ?? item.productId ?? item.ProductID ?? 0;
+          return {
+            id: item.id ?? item.ID ?? index,
+            order_id: item.order_id ?? item.orderId ?? item.OrderID ?? id,
+            product_id: productId,
+            product_name_snapshot:
+              item.product_name_snapshot ??
+              item.productNameSnapshot ??
+              item.ProductNameSnapshot ??
+              `商品 #${productId}`,
+            product_sku_snapshot:
+              item.product_sku_snapshot ??
+              item.productSKUSnapshot ??
+              item.ProductSKUSnapshot ??
+              null,
+            product_category_snapshot:
+              item.product_category_snapshot ??
+              item.productCategorySnapshot ??
+              item.ProductCategorySnapshot ??
+              '',
+            quantity: item.quantity ?? item.Quantity ?? 0,
+            unit_price: item.unit_price ?? item.unitPrice ?? item.UnitPrice ?? 0,
+            paid_price:
+              item.paid_price ??
+              item.paidPrice ??
+              item.PaidPrice ??
+              item.unit_price ??
+              item.unitPrice ??
+              item.UnitPrice ??
+              0,
+            subtotal: item.subtotal ?? item.Subtotal ?? 0,
+          };
+        }),
       } satisfies OrderDetailDTO;
     },
 

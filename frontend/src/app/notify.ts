@@ -1,0 +1,13 @@
+export function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  if (typeof error === 'string' && error.trim()) {
+    return error;
+  }
+  return fallback;
+}
+
+export function notifyError(message: string): void {
+  window.alert(message);
+}

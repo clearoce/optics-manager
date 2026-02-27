@@ -15,13 +15,16 @@ type Order struct {
 // OrderItem 对应数据库中的 order_items 表
 // 注意它和 Order 是分开定义的两个结构体，因为它们对应的是两张表
 type OrderItem struct {
-	ID        int64   `db:"id"`
-	OrderID   int64   `db:"order_id"`
-	ProductID int64   `db:"product_id"`
-	Quantity  int     `db:"quantity"`
-	UnitPrice float64 `db:"unit_price"` // 标价快照
-	PaidPrice float64 `db:"paid_price"` // 实付单价
-	Subtotal  float64 `db:"subtotal"`
+	ID                      int64   `db:"id"`
+	OrderID                 int64   `db:"order_id"`
+	ProductID               int64   `db:"product_id"`
+	ProductNameSnapshot     string  `db:"product_name_snapshot"`
+	ProductSKUSnapshot      *string `db:"product_sku_snapshot"`
+	ProductCategorySnapshot string  `db:"product_category_snapshot"`
+	Quantity                int     `db:"quantity"`
+	UnitPrice               float64 `db:"unit_price"` // 标价快照
+	PaidPrice               float64 `db:"paid_price"` // 实付单价
+	Subtotal                float64 `db:"subtotal"`
 }
 
 // OrderDetail 是一个"视图结构体"，不直接对应任何一张表
