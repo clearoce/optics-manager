@@ -4,6 +4,8 @@ import { Status, type Customer, type Order } from '../../types';
 import { SearchBar } from '../common/SearchBar';
 import { StatCard } from '../common/StatCard';
 
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+
 type OrdersViewProps = {
   orders: Order[];
   filteredOrders: Order[];
@@ -35,6 +37,8 @@ export function OrdersView({
   const [dateTo, setDateTo] = useState('');
   const [amountMin, setAmountMin] = useState('');
   const [amountMax, setAmountMax] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(10);
 
   const customerPhoneById = useMemo(() => {
     return new Map(customers.map((customer) => [customer.id, customer.phone]));
@@ -61,8 +65,46 @@ export function OrdersView({
     [displayOrders],
   );
 
+  const totalOrders = displayOrders.length;
+  const totalPages = Math.max(1, Math.ceil(totalOrders / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const pagedOrders = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return displayOrders.slice(start, start + pageSize);
+  }, [displayOrders, safeCurrentPage, pageSize]);
+
+  const pageStart = totalOrders === 0 ? 0 : (safeCurrentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(safeCurrentPage * pageSize, totalOrders);
+
+  const handleSearchInput = (value: string) => {
+    setCurrentPage(1);
+    onSearchChange(value);
+  };
+
+  const handleDateFromChange = (value: string) => {
+    setCurrentPage(1);
+    setDateFrom(value);
+  };
+
+  const handleDateToChange = (value: string) => {
+    setCurrentPage(1);
+    setDateTo(value);
+  };
+
+  const handleAmountMinChange = (value: string) => {
+    setCurrentPage(1);
+    setAmountMin(value);
+  };
+
+  const handleAmountMaxChange = (value: string) => {
+    setCurrentPage(1);
+    setAmountMax(value);
+  };
+
   const hasActiveFilter = dateFrom || dateTo || amountMin || amountMax;
   const clearFilters = () => {
+    setCurrentPage(1);
     setDateFrom('');
     setDateTo('');
     setAmountMin('');
@@ -126,7 +168,7 @@ export function OrdersView({
           <input
             type="date"
             value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
+            onChange={(e) => handleDateFromChange(e.target.value)}
             aria-label="开始日期"
             className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
           />
@@ -138,7 +180,7 @@ export function OrdersView({
           <input
             type="date"
             value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
+            onChange={(e) => handleDateToChange(e.target.value)}
             aria-label="结束日期"
             className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
           />
@@ -151,7 +193,7 @@ export function OrdersView({
             min="0"
             step="0.01"
             value={amountMin}
-            onChange={(event) => setAmountMin(event.target.value)}
+            onChange={(event) => handleAmountMinChange(event.target.value)}
             className="w-28 border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
             placeholder="最小"
             aria-label="最小金额"
@@ -162,7 +204,7 @@ export function OrdersView({
             min="0"
             step="0.01"
             value={amountMax}
-            onChange={(event) => setAmountMax(event.target.value)}
+            onChange={(event) => handleAmountMaxChange(event.target.value)}
             className="w-28 border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
             placeholder="最大"
             aria-label="最大金额"
@@ -170,7 +212,7 @@ export function OrdersView({
         </div>
 
         <div className="w-full sm:w-auto sm:min-w-[280px] md:min-w-[320px]">
-          <SearchBar value={searchTerm} onChange={onSearchChange} placeholder="搜索客户名、电话或备注..." />
+          <SearchBar value={searchTerm} onChange={handleSearchInput} placeholder="搜索客户名、电话或备注..." />
         </div>
 
         {/* 清除 */}
@@ -229,7 +271,7 @@ export function OrdersView({
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-slate-200">
-              {displayOrders.map((o) => (
+              {pagedOrders.map((o) => (
                 <tr
                   key={o.id}
                   onClick={() => onOpenOrderDetail(o.id)}
@@ -279,6 +321,52 @@ export function OrdersView({
               ))}
             </tbody>
           </table>
+        )}
+        {totalOrders > 0 && (
+          <div className="border-t border-slate-200 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white">
+            <div className="text-xs text-slate-500">
+              显示 {pageStart}-{pageEnd} 条，共 {totalOrders} 条
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <label htmlFor="orders-page-size" className="text-slate-500 text-xs">
+                每页
+              </label>
+              <select
+                id="orders-page-size"
+                value={pageSize}
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value) as (typeof PAGE_SIZE_OPTIONS)[number]);
+                  setCurrentPage(1);
+                }}
+                className="border border-slate-300 rounded-md px-2 py-1 text-sm"
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                disabled={safeCurrentPage === 1}
+                className="px-2.5 py-1.5 rounded-md border border-slate-300 text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
+              >
+                上一页
+              </button>
+              <span className="text-xs text-slate-600 min-w-[72px] text-center">
+                第 {safeCurrentPage} / {totalPages} 页
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                disabled={safeCurrentPage >= totalPages}
+                className="px-2.5 py-1.5 rounded-md border border-slate-300 text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
+              >
+                下一页
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

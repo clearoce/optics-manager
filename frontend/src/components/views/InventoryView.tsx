@@ -1,6 +1,9 @@
 import { Edit, Plus, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import type { Product } from '../../types';
 import { SearchBar } from '../common/SearchBar';
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 
 type InventoryViewProps = {
   filteredProducts: Product[];
@@ -23,12 +26,32 @@ export function InventoryView({
   onOpenEditProduct,
   onDeleteProduct,
 }: InventoryViewProps) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(10);
+
+  const totalProducts = filteredProducts.length;
+  const totalPages = Math.max(1, Math.ceil(totalProducts / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const pagedProducts = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, safeCurrentPage, pageSize]);
+
+  const pageStart = totalProducts === 0 ? 0 : (safeCurrentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(safeCurrentPage * pageSize, totalProducts);
+
+  const handleSearchInput = (value: string) => {
+    setCurrentPage(1);
+    onSearchChange(value);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h2 className="text-2xl font-bold text-slate-900">商品管理</h2>
         <div className="flex w-full sm:w-auto gap-2">
-          <SearchBar value={searchTerm} onChange={onSearchChange} placeholder="搜索产品名称..." />
+          <SearchBar value={searchTerm} onChange={handleSearchInput} placeholder="搜索产品名称..." />
           <button
             onClick={onOpenCreateProduct}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 whitespace-nowrap inline-flex items-center"
@@ -59,7 +82,7 @@ export function InventoryView({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-slate-200">
-            {filteredProducts.map((p) => (
+            {pagedProducts.map((p) => (
               <tr key={p.id} className="hover:bg-slate-50">
                 <td className="px-6 py-4">
                   <div className="font-medium text-slate-900">{p.name}</div>
@@ -94,6 +117,52 @@ export function InventoryView({
             ))}
           </tbody>
         </table>
+        {totalProducts > 0 && (
+          <div className="border-t border-slate-200 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white">
+            <div className="text-xs text-slate-500">
+              显示 {pageStart}-{pageEnd} 条，共 {totalProducts} 条
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <label htmlFor="inventory-page-size" className="text-slate-500 text-xs">
+                每页
+              </label>
+              <select
+                id="inventory-page-size"
+                value={pageSize}
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value) as (typeof PAGE_SIZE_OPTIONS)[number]);
+                  setCurrentPage(1);
+                }}
+                className="border border-slate-300 rounded-md px-2 py-1 text-sm"
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                disabled={safeCurrentPage === 1}
+                className="px-2.5 py-1.5 rounded-md border border-slate-300 text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
+              >
+                上一页
+              </button>
+              <span className="text-xs text-slate-600 min-w-[72px] text-center">
+                第 {safeCurrentPage} / {totalPages} 页
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                disabled={safeCurrentPage >= totalPages}
+                className="px-2.5 py-1.5 rounded-md border border-slate-300 text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
+              >
+                下一页
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

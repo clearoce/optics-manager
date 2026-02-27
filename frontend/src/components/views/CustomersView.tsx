@@ -1,6 +1,9 @@
 import { ChevronRight, Edit, Plus } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import type { Customer } from '../../types';
 import { SearchBar } from '../common/SearchBar';
+
+const PAGE_SIZE_OPTIONS = [9, 12] as const;
 
 type CustomersViewProps = {
   filteredCustomers: Customer[];
@@ -23,12 +26,32 @@ export function CustomersView({
   onOpenEditCustomer,
   onOpenCustomerHistory,
 }: CustomersViewProps) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(12);
+
+  const totalCustomers = filteredCustomers.length;
+  const totalPages = Math.max(1, Math.ceil(totalCustomers / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const pagedCustomers = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredCustomers.slice(start, start + pageSize);
+  }, [filteredCustomers, safeCurrentPage, pageSize]);
+
+  const pageStart = totalCustomers === 0 ? 0 : (safeCurrentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(safeCurrentPage * pageSize, totalCustomers);
+
+  const handleSearchInput = (value: string) => {
+    setCurrentPage(1);
+    onSearchChange(value);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h2 className="text-2xl font-bold text-slate-900">客户列表</h2>
         <div className="flex w-full sm:w-auto gap-2">
-          <SearchBar value={searchTerm} onChange={onSearchChange} placeholder="搜索姓名、手机号或ID..." />
+          <SearchBar value={searchTerm} onChange={handleSearchInput} placeholder="搜索姓名、手机号或ID..." />
           <button
             onClick={onOpenCreateCustomer}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 whitespace-nowrap inline-flex items-center"
@@ -48,7 +71,7 @@ export function CustomersView({
         <div className="text-sm text-slate-500 bg-white border border-slate-200 rounded-lg px-3 py-2">暂无客户数据</div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {filteredCustomers.map((customer) => (
+        {pagedCustomers.map((customer) => (
           <div
             key={customer.id}
             onClick={() => onOpenCustomerHistory(customer)}
@@ -90,6 +113,52 @@ export function CustomersView({
           </div>
         ))}
       </div>
+      {totalCustomers > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="text-xs text-slate-500">
+            显示 {pageStart}-{pageEnd} 条，共 {totalCustomers} 条
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <label htmlFor="customers-page-size" className="text-slate-500 text-xs">
+              每页
+            </label>
+            <select
+              id="customers-page-size"
+              value={pageSize}
+              onChange={(event) => {
+                setPageSize(Number(event.target.value) as (typeof PAGE_SIZE_OPTIONS)[number]);
+                setCurrentPage(1);
+              }}
+              className="border border-slate-300 rounded-md px-2 py-1 text-sm"
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              disabled={safeCurrentPage === 1}
+              className="px-2.5 py-1.5 rounded-md border border-slate-300 text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
+            >
+              上一页
+            </button>
+            <span className="text-xs text-slate-600 min-w-[72px] text-center">
+              第 {safeCurrentPage} / {totalPages} 页
+            </span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              disabled={safeCurrentPage >= totalPages}
+              className="px-2.5 py-1.5 rounded-md border border-slate-300 text-xs disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
+            >
+              下一页
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
