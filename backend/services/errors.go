@@ -6,11 +6,11 @@ import (
 )
 
 var (
-	ErrCustomerNotFound        = errors.New("customer not found")
-	ErrProductNotFound         = errors.New("product not found")
-	ErrProductSKUAlreadyExists = errors.New("product sku already exists")
-	ErrOrderNotFound           = errors.New("order not found")
-	ErrInvalidOrderTotal       = errors.New("invalid order total amount")
+	ErrCustomerNotFound    = errors.New("customer not found")
+	ErrProductNotFound     = errors.New("product not found")
+	ErrOrderNotFound       = errors.New("order not found")
+	ErrInvalidOrderTotal   = errors.New("invalid order total amount")
+	ErrInvalidVisionRecord = errors.New("invalid customer vision record")
 )
 
 type ProductNotFoundInOrderError struct {

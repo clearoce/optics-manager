@@ -13,15 +13,18 @@ type orderService struct {
 	db *sql.DB
 }
 
+type customerSnapshot struct {
+	Name  string
+	Phone string
+}
+
 type productSnapshot struct {
-	Name     string
-	Category string
-	SKU      *string
-	Price    float64
+	Name string
 }
 
 func (s *orderService) CreateOrder(ctx context.Context, input OrderCreateInput) (int64, float64, error) {
-	if err := s.ensureCustomerExists(ctx, input.CustomerID); err != nil {
+	customerSnapshot, err := s.loadCustomerSnapshot(ctx, input.CustomerID)
+	if err != nil {
 		return 0, 0, err
 	}
 
@@ -48,8 +51,10 @@ func (s *orderService) CreateOrder(ctx context.Context, input OrderCreateInput) 
 
 	result, err := tx.ExecContext(
 		ctx,
-		`INSERT INTO orders (customer_id, total_amount, notes, extra_info) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO orders (customer_id, customer_name_snapshot, customer_phone_snapshot, total_amount, notes, extra_info) VALUES (?, ?, ?, ?, ?, ?)`,
 		input.CustomerID,
+		customerSnapshot.Name,
+		customerSnapshot.Phone,
 		totalAmount,
 		input.Notes,
 		input.ExtraInfo,
@@ -72,10 +77,10 @@ func (s *orderService) CreateOrder(ctx context.Context, input OrderCreateInput) 
 			orderID,
 			item.ProductID,
 			productSnapshot.Name,
-			productSnapshot.SKU,
-			productSnapshot.Category,
+			nil,
+			"",
 			item.Quantity,
-			productSnapshot.Price,
+			item.UnitPrice,
 			item.PaidPrice,
 			subtotal,
 		); err != nil {
@@ -92,10 +97,10 @@ func (s *orderService) CreateOrder(ctx context.Context, input OrderCreateInput) 
 }
 
 func (s *orderService) GetOrders(ctx context.Context, customerID *int64) ([]models.Order, error) {
-	query := `SELECT id, customer_id, total_amount, order_date, notes, extra_info FROM orders ORDER BY order_date DESC`
+	query := `SELECT id, customer_id, customer_name_snapshot, customer_phone_snapshot, total_amount, order_date, notes, extra_info FROM orders ORDER BY order_date DESC`
 	args := []any{}
 	if customerID != nil {
-		query = `SELECT id, customer_id, total_amount, order_date, notes, extra_info FROM orders WHERE customer_id = ? ORDER BY order_date DESC`
+		query = `SELECT id, customer_id, customer_name_snapshot, customer_phone_snapshot, total_amount, order_date, notes, extra_info FROM orders WHERE customer_id = ? ORDER BY order_date DESC`
 		args = append(args, *customerID)
 	}
 
@@ -109,7 +114,7 @@ func (s *orderService) GetOrders(ctx context.Context, customerID *int64) ([]mode
 	for rows.Next() {
 		var o models.Order
 		var orderDateStr string
-		if err := rows.Scan(&o.ID, &o.CustomerID, &o.TotalAmount, &orderDateStr, &o.Notes, &o.ExtraInfo); err != nil {
+		if err := rows.Scan(&o.ID, &o.CustomerID, &o.CustomerNameSnapshot, &o.CustomerPhoneSnapshot, &o.TotalAmount, &orderDateStr, &o.Notes, &o.ExtraInfo); err != nil {
 			return nil, err
 		}
 		if t, err := database.ParseTime(orderDateStr); err == nil {
@@ -133,7 +138,7 @@ func (s *orderService) GetOrderDetail(ctx context.Context, id int64) (models.Ord
 
 	itemsRows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, order_id, product_id, product_name_snapshot, product_sku_snapshot, product_category_snapshot, quantity, unit_price, paid_price, subtotal FROM order_items WHERE order_id = ?`,
+		`SELECT id, order_id, product_id, product_name_snapshot, quantity, unit_price, paid_price, subtotal FROM order_items WHERE order_id = ?`,
 		id,
 	)
 	if err != nil {
@@ -149,8 +154,6 @@ func (s *orderService) GetOrderDetail(ctx context.Context, id int64) (models.Ord
 			&item.OrderID,
 			&item.ProductID,
 			&item.ProductNameSnapshot,
-			&item.ProductSKUSnapshot,
-			&item.ProductCategorySnapshot,
 			&item.Quantity,
 			&item.UnitPrice,
 			&item.PaidPrice,
@@ -173,7 +176,8 @@ func (s *orderService) UpdateOrder(ctx context.Context, id int64, input OrderUpd
 		return 0, err
 	}
 
-	if err := s.ensureCustomerExists(ctx, input.CustomerID); err != nil {
+	customerSnapshot, err := s.loadCustomerSnapshot(ctx, input.CustomerID)
+	if err != nil {
 		return 0, err
 	}
 
@@ -200,8 +204,10 @@ func (s *orderService) UpdateOrder(ctx context.Context, id int64, input OrderUpd
 
 	result, err := tx.ExecContext(
 		ctx,
-		`UPDATE orders SET customer_id = ?, total_amount = ?, notes = ?, extra_info = ? WHERE id = ?`,
+		`UPDATE orders SET customer_id = ?, customer_name_snapshot = ?, customer_phone_snapshot = ?, total_amount = ?, notes = ?, extra_info = ? WHERE id = ?`,
 		input.CustomerID,
+		customerSnapshot.Name,
+		customerSnapshot.Phone,
 		totalAmount,
 		input.Notes,
 		input.ExtraInfo,
@@ -232,10 +238,10 @@ func (s *orderService) UpdateOrder(ctx context.Context, id int64, input OrderUpd
 			id,
 			item.ProductID,
 			productSnapshot.Name,
-			productSnapshot.SKU,
-			productSnapshot.Category,
+			nil,
+			"",
 			item.Quantity,
-			productSnapshot.Price,
+			item.UnitPrice,
 			item.PaidPrice,
 			subtotal,
 		); err != nil {
@@ -293,15 +299,21 @@ func (s *orderService) DeleteOrder(ctx context.Context, id int64) error {
 }
 
 func (s *orderService) ensureCustomerExists(ctx context.Context, customerID int64) error {
-	var exists int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM customers WHERE id = ?`, customerID).Scan(&exists)
+	_, err := s.loadCustomerSnapshot(ctx, customerID)
+	return err
+}
+
+func (s *orderService) loadCustomerSnapshot(ctx context.Context, customerID int64) (customerSnapshot, error) {
+	var snapshot customerSnapshot
+	err := s.db.QueryRowContext(ctx, `SELECT name, phone FROM customers WHERE id = ?`, customerID).Scan(&snapshot.Name, &snapshot.Phone)
 	if err != nil {
-		return err
+		if errors.Is(err, sql.ErrNoRows) {
+			return customerSnapshot{}, ErrCustomerNotFound
+		}
+		return customerSnapshot{}, err
 	}
-	if exists == 0 {
-		return ErrCustomerNotFound
-	}
-	return nil
+
+	return snapshot, nil
 }
 
 func (s *orderService) ensureOrderExists(ctx context.Context, orderID int64) error {
@@ -327,9 +339,9 @@ func (s *orderService) loadProductSnapshotMap(ctx context.Context, items []Order
 		var snapshot productSnapshot
 		err := s.db.QueryRowContext(
 			ctx,
-			`SELECT name, category, sku, price FROM products WHERE id = ? AND deleted_at IS NULL`,
+			`SELECT name FROM products WHERE id = ? AND deleted_at IS NULL`,
 			item.ProductID,
-		).Scan(&snapshot.Name, &snapshot.Category, &snapshot.SKU, &snapshot.Price)
+		).Scan(&snapshot.Name)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil, ProductNotFoundInOrderError{ProductID: item.ProductID}
@@ -348,9 +360,9 @@ func (s *orderService) getOrderByID(ctx context.Context, id int64) (models.Order
 	var orderDateStr string
 	err := s.db.QueryRowContext(
 		ctx,
-		`SELECT id, customer_id, total_amount, order_date, notes, extra_info FROM orders WHERE id = ?`,
+		`SELECT id, customer_id, customer_name_snapshot, customer_phone_snapshot, total_amount, order_date, notes, extra_info FROM orders WHERE id = ?`,
 		id,
-	).Scan(&o.ID, &o.CustomerID, &o.TotalAmount, &orderDateStr, &o.Notes, &o.ExtraInfo)
+	).Scan(&o.ID, &o.CustomerID, &o.CustomerNameSnapshot, &o.CustomerPhoneSnapshot, &o.TotalAmount, &orderDateStr, &o.Notes, &o.ExtraInfo)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return models.Order{}, ErrOrderNotFound

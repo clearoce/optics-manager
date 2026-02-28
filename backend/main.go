@@ -21,7 +21,7 @@ func main() {
 	database.Migrate()
 	database.StartAutoBackup()
 
-	handlers.InitServices(handlers.Dependencies{
+	h := handlers.NewHandler(handlers.Dependencies{
 		CustomerService: services.NewCustomerService(database.DB),
 		ProductService:  services.NewProductService(database.DB),
 		OrderService:    services.NewOrderService(database.DB),
@@ -48,30 +48,32 @@ func main() {
 		// 客户管理
 		customers := api.Group("/customers")
 		{
-			customers.POST("", handlers.CreateCustomer)
-			customers.GET("", handlers.GetCustomers)
-			customers.GET("/:id", handlers.GetCustomerByID)
-			customers.PUT("/:id", handlers.UpdateCustomer)
+			customers.POST("", h.CreateCustomer)
+			customers.GET("", h.GetCustomers)
+			customers.GET("/:id", h.GetCustomerByID)
+			customers.PUT("/:id", h.UpdateCustomer)
+			customers.POST("/:id/vision-records", h.AppendCustomerVisionRecords)
+			customers.DELETE("/:id", h.DeleteCustomer)
 		}
 
 		// 商品管理
 		products := api.Group("/products")
 		{
-			products.POST("", handlers.CreateProduct)
-			products.GET("", handlers.GetProducts)
-			products.GET("/:id", handlers.GetProductByID)
-			products.PUT("/:id", handlers.UpdateProduct)
-			products.DELETE("/:id", handlers.DeleteProduct)
+			products.POST("", h.CreateProduct)
+			products.GET("", h.GetProducts)
+			products.GET("/:id", h.GetProductByID)
+			products.PUT("/:id", h.UpdateProduct)
+			products.DELETE("/:id", h.DeleteProduct)
 		}
 
 		// 订单管理
 		orders := api.Group("/orders")
 		{
-			orders.POST("", handlers.CreateOrder)
-			orders.GET("", handlers.GetOrders)
-			orders.GET("/:id", handlers.GetOrderDetail)
-			orders.PUT("/:id", handlers.UpdateOrder)
-			orders.DELETE("/:id", handlers.DeleteOrder)
+			orders.POST("", h.CreateOrder)
+			orders.GET("", h.GetOrders)
+			orders.GET("/:id", h.GetOrderDetail)
+			orders.PUT("/:id", h.UpdateOrder)
+			orders.DELETE("/:id", h.DeleteOrder)
 		}
 	}
 

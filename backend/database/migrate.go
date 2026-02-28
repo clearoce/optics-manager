@@ -24,6 +24,28 @@ func Migrate() {
 			created_at DATETIME DEFAULT (datetime('now', '+8 hours'))
 		)`,
 
+		// ---- 客户验光参数历史表 ----
+		`CREATE TABLE IF NOT EXISTS customer_vision_records (
+			id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+			customer_id        INTEGER NOT NULL,
+			recorded_at        DATETIME NOT NULL,
+			left_sphere        REAL NOT NULL,
+			left_cylinder      REAL NOT NULL,
+			left_axis          INTEGER NOT NULL,
+			left_pd            REAL NOT NULL,
+			left_visual_acuity REAL NOT NULL,
+			right_sphere       REAL NOT NULL,
+			right_cylinder     REAL NOT NULL,
+			right_axis         INTEGER NOT NULL,
+			right_pd           REAL NOT NULL,
+			right_visual_acuity REAL NOT NULL,
+			created_at         DATETIME DEFAULT (datetime('now', '+8 hours')),
+			FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_customer_vision_records_customer_id_recorded_at
+		ON customer_vision_records(customer_id, recorded_at DESC, id DESC)`,
+
 		// ---- 商品表 ----
 		`CREATE TABLE IF NOT EXISTS products (
 			id             INTEGER  PRIMARY KEY AUTOINCREMENT,
@@ -38,13 +60,14 @@ func Migrate() {
 
 		// ---- 订单表 ----
 		`CREATE TABLE IF NOT EXISTS orders (
-			id           INTEGER  PRIMARY KEY AUTOINCREMENT,
-			customer_id  INTEGER  NOT NULL,
-			total_amount REAL     NOT NULL,
-			order_date   DATETIME DEFAULT (datetime('now', '+8 hours')),
-			notes        TEXT,
-			extra_info   TEXT,
-			FOREIGN KEY (customer_id) REFERENCES customers(id)
+			id                     INTEGER  PRIMARY KEY AUTOINCREMENT,
+			customer_id            INTEGER  NOT NULL,
+			customer_name_snapshot TEXT     NOT NULL DEFAULT '',
+			customer_phone_snapshot TEXT    NOT NULL DEFAULT '',
+			total_amount           REAL     NOT NULL,
+			order_date             DATETIME DEFAULT (datetime('now', '+8 hours')),
+			notes                  TEXT,
+			extra_info             TEXT
 		)`,
 
 		// ---- 订单明细表（无时间字段，不需要修改）----
@@ -80,6 +103,14 @@ func Migrate() {
 	}
 
 	if err := ensureOrderItemsSnapshotColumns(); err != nil {
+		log.Fatalf("数据库迁移失败: %v", err)
+	}
+
+	if err := ensureOrdersCustomerSnapshotColumns(); err != nil {
+		log.Fatalf("数据库迁移失败: %v", err)
+	}
+
+	if err := ensureOrdersSupportDeletingCustomer(); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
 
@@ -173,17 +204,160 @@ func ensureOrderItemsSnapshotColumns() error {
 			),
 			product_sku_snapshot = COALESCE(
 				product_sku_snapshot,
-				(SELECT p.sku FROM products p WHERE p.id = order_items.product_id)
+				NULL
 			),
 			product_category_snapshot = COALESCE(
 				NULLIF(product_category_snapshot, ''),
-				(SELECT p.category FROM products p WHERE p.id = order_items.product_id),
 				''
 			)
 	`); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+func ensureOrdersCustomerSnapshotColumns() error {
+	type snapshotColumn struct {
+		name string
+		sql  string
+		log  string
+	}
+
+	columns := []snapshotColumn{
+		{
+			name: "customer_name_snapshot",
+			sql:  `ALTER TABLE orders ADD COLUMN customer_name_snapshot TEXT NOT NULL DEFAULT ''`,
+			log:  "已为 orders 表补齐 customer_name_snapshot 字段",
+		},
+		{
+			name: "customer_phone_snapshot",
+			sql:  `ALTER TABLE orders ADD COLUMN customer_phone_snapshot TEXT NOT NULL DEFAULT ''`,
+			log:  "已为 orders 表补齐 customer_phone_snapshot 字段",
+		},
+	}
+
+	for _, column := range columns {
+		hasColumnValue, err := hasColumn("orders", column.name)
+		if err != nil {
+			return err
+		}
+		if hasColumnValue {
+			continue
+		}
+
+		if _, err := DB.Exec(column.sql); err != nil {
+			return err
+		}
+		log.Println(column.log)
+	}
+
+	if _, err := DB.Exec(`UPDATE orders
+		SET
+			customer_name_snapshot = COALESCE(
+				NULLIF(customer_name_snapshot, ''),
+				(SELECT c.name FROM customers c WHERE c.id = orders.customer_id),
+				''
+			),
+			customer_phone_snapshot = COALESCE(
+				NULLIF(customer_phone_snapshot, ''),
+				(SELECT c.phone FROM customers c WHERE c.id = orders.customer_id),
+				''
+			)
+	`); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func ensureOrdersSupportDeletingCustomer() (err error) {
+	hasForeignKey, err := hasForeignKeyToTable("orders", "customers")
+	if err != nil {
+		return err
+	}
+	if !hasForeignKey {
+		return nil
+	}
+
+	if _, err = DB.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+		return err
+	}
+	defer func() {
+		if _, execErr := DB.Exec(`PRAGMA foreign_keys = ON`); err == nil && execErr != nil {
+			err = execErr
+		}
+	}()
+
+	tx, err := DB.Begin()
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err := tx.Exec(`CREATE TABLE orders_new (
+		id                     INTEGER  PRIMARY KEY AUTOINCREMENT,
+		customer_id            INTEGER  NOT NULL,
+		customer_name_snapshot TEXT     NOT NULL DEFAULT '',
+		customer_phone_snapshot TEXT    NOT NULL DEFAULT '',
+		total_amount           REAL     NOT NULL,
+		order_date             DATETIME DEFAULT (datetime('now', '+8 hours')),
+		notes                  TEXT,
+		extra_info             TEXT
+	)`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`INSERT INTO orders_new (
+		id,
+		customer_id,
+		customer_name_snapshot,
+		customer_phone_snapshot,
+		total_amount,
+		order_date,
+		notes,
+		extra_info
+	)
+	SELECT
+		id,
+		customer_id,
+		COALESCE(
+			NULLIF(customer_name_snapshot, ''),
+			(SELECT c.name FROM customers c WHERE c.id = orders.customer_id),
+			''
+		),
+		COALESCE(
+			NULLIF(customer_phone_snapshot, ''),
+			(SELECT c.phone FROM customers c WHERE c.id = orders.customer_id),
+			''
+		),
+		total_amount,
+		order_date,
+		notes,
+		extra_info
+	FROM orders`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`DROP TABLE orders`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`ALTER TABLE orders_new RENAME TO orders`); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+
+	log.Println("已重建 orders 表：允许删除有关联订单的客户，订单保留客户快照")
 	return nil
 }
 
@@ -218,4 +392,41 @@ func hasColumn(tableName string, columnName string) (bool, error) {
 	}
 
 	return hasColumnValue, nil
+}
+
+func hasForeignKeyToTable(tableName string, targetTable string) (bool, error) {
+	rows, err := DB.Query(fmt.Sprintf("PRAGMA foreign_key_list(%s)", tableName))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	hasForeignKey := false
+	for rows.Next() {
+		var (
+			id       int
+			seq      int
+			table    string
+			from     string
+			to       string
+			onUpdate string
+			onDelete string
+			match    string
+		)
+
+		if err := rows.Scan(&id, &seq, &table, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+			return false, err
+		}
+
+		if table == targetTable {
+			hasForeignKey = true
+			break
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+
+	return hasForeignKey, nil
 }

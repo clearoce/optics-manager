@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
-import { Bell, LayoutDashboard, Package, ShoppingCart, Users } from 'lucide-react';
+import { useMemo } from 'react';
+import { LayoutDashboard, Moon, Package, ShoppingCart, Sun, Users } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { api } from './services/api';
 import type { Customer, Product, View } from './types';
 import { getErrorMessage, notifyError } from './app/notify';
-import { buildHistoryJumpOrderSearchTerm, createOrderSearchMatcher } from './app/orderSearch';
+import { createOrderSearchMatcher } from './app/orderSearch';
 import { DashboardView } from './components/views/DashboardView';
 import { CustomersView } from './components/views/CustomersView';
 import { InventoryView } from './components/views/InventoryView';
@@ -20,10 +21,17 @@ import { useOrdersData } from './hooks/useOrdersData';
 import { useOrderEditor } from './hooks/useOrderEditor';
 import { useCustomerEditor } from './hooks/useCustomerEditor';
 import { useProductEditor } from './hooks/useProductEditor';
+import { useOrderInteractions } from './hooks/useOrderInteractions';
 import { createFieldSearchMatcher, useSearchFilter } from './hooks/useSearchFilter';
 
 function App() {
+  const { resolvedTheme, setTheme } = useTheme();
   const { activeView, searchTerm, updateUrlAndState, handleViewChange, handleSearchChange } = useUrlViewState();
+  const isDarkMode = resolvedTheme === 'dark';
+
+  const toggleThemeMode = () => {
+    setTheme(isDarkMode ? 'light' : 'dark');
+  };
 
   const { customers, customersLoading, customersError, loadCustomers } = useCustomersData();
   const { products, productsLoading, productsError, loadProducts } = useProductsData();
@@ -39,6 +47,9 @@ function App() {
     setOrderCustomerPhone,
     orderCustomerNotes,
     setOrderCustomerNotes,
+    orderVisionRecords,
+    setOrderVisionRecords,
+    setOrderVisionRecordsTouched,
     isCustomerPickerOpen,
     setIsCustomerPickerOpen,
     activeProductPickerIndex,
@@ -56,6 +67,7 @@ function App() {
     openEditOrder,
     handleSubmitOrder,
     createEmptyOrderItemDraft,
+    createEmptyVisionRecordForm,
     formatCurrencyText,
     sanitizeMoneyTextInput,
     normalizeMoneyTextToFixed2,
@@ -77,6 +89,7 @@ function App() {
     openEditCustomerModal,
     closeCustomerModal,
     handleSubmitCustomer,
+    handleDeleteCustomer,
   } = useCustomerEditor({
     loadCustomers,
   });
@@ -91,92 +104,73 @@ function App() {
     openEditProductModal,
     closeProductModal,
     handleSubmitProduct,
-    handleDeleteProduct,
   } = useProductEditor({
-    products,
     loadProducts,
   });
 
-  const [detailOrder, setDetailOrder] = useState<Awaited<ReturnType<typeof api.orders.detail>> | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState('');
+  const {
+    detailOrder,
+    detailLoading,
+    detailError,
+    setDetailOrder,
+    openOrderDetail,
+    historyCustomer,
+    historyOrders,
+    historyLoading,
+    historyError,
+    setHistoryCustomer,
+    openCustomerHistory,
+    exactOrderId,
+    exactCustomerId,
+    jumpToOrder,
+    jumpToCustomerFromOrder,
+    handleBulkDeleteOrders,
+    handleOrderSearchChange,
+    handleCustomerSearchChange,
+  } = useOrderInteractions({
+    activeView,
+    handleSearchChange,
+    updateUrlAndState,
+    loadOrders,
+  });
 
-  const [historyCustomer, setHistoryCustomer] = useState<Customer | null>(null);
-  const [historyOrders, setHistoryOrders] = useState<Awaited<ReturnType<typeof api.orders.list>>>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState('');
-
-
-  const openCustomerHistory = async (customer: Customer) => {
-    const customerId = Number(customer.id);
-    if (!Number.isFinite(customerId)) {
-      notifyError('当前客户不是后端数据，暂不支持查询订单历史。');
+  const handleBulkDeleteProducts = async (productIds: string[]) => {
+    const ids = Array.from(new Set(productIds.map((id) => Number(id)).filter((id) => Number.isFinite(id))));
+    if (ids.length === 0) {
+      notifyError('未选择有效商品，无法批量删除');
       return;
     }
 
-    setHistoryCustomer(customer);
-    setHistoryOrders([]);
-    setHistoryError('');
-    setHistoryLoading(true);
-    try {
-      const rows = await api.orders.list(customerId);
-      setHistoryOrders(rows);
-    } catch (error) {
-      setHistoryError(getErrorMessage(error, '加载订单历史失败'));
-    } finally {
-      setHistoryLoading(false);
-    }
-  };
-
-  const openOrderDetail = async (orderId: string) => {
-    const id = Number(orderId);
-    if (!Number.isFinite(id)) {
-      notifyError('当前订单不是后端数据，无法查看详情');
+    const firstConfirm = window.confirm(`确认删除已选中的 ${ids.length} 个商品吗？`);
+    if (!firstConfirm) {
       return;
     }
 
-    setDetailOrder(null);
-    setDetailError('');
-    setDetailLoading(true);
-    try {
-      const detail = await api.orders.detail(id);
-      setDetailOrder(detail);
-    } catch (error) {
-      setDetailError(getErrorMessage(error, '加载订单详情失败'));
-      setDetailOrder({
-        order: { id, customer_id: 0, total_amount: 0, order_date: undefined, notes: null, extra_info: null },
-        items: [],
-      });
-    } finally {
-      setDetailLoading(false);
-    }
-  };
-
-  const handleDeleteOrder = async (orderId: string) => {
-    const id = Number(orderId);
-    if (!Number.isFinite(id)) {
-      notifyError('当前订单不是后端数据，无法删除');
+    const secondConfirm = window.confirm('这是不可恢复操作，请再次确认要批量删除这些商品。');
+    if (!secondConfirm) {
       return;
     }
 
-    const ok = window.confirm(`确认删除订单 #${id} 吗？`);
-    if (!ok) return;
-
     try {
-      await api.orders.remove(id);
-      if (detailOrder?.order.id === id) {
-        setDetailOrder(null);
+      let failedCount = 0;
+
+      for (const id of ids) {
+        try {
+          await api.products.remove(id);
+        } catch {
+          failedCount += 1;
+        }
       }
-      await loadOrders(customers);
+
+      await loadProducts();
+      if (failedCount > 0) {
+        notifyError(`批量删除商品部分失败：成功 ${ids.length - failedCount} 条，失败 ${failedCount} 条`);
+      }
     } catch (error) {
-      notifyError(getErrorMessage(error, '删除订单失败'));
+      notifyError(getErrorMessage(error, '批量删除商品失败'));
     }
   };
 
-  const jumpToOrder = (orderId: number) => {
-    setHistoryCustomer(null);
-    updateUrlAndState('orders', buildHistoryJumpOrderSearchTerm(orderId), true);
-  };
 
   const menuItems = [
     { id: 'dashboard' as View, label: '仪表盘', icon: LayoutDashboard },
@@ -189,7 +183,7 @@ function App() {
     dashboard: '仪表盘',
     inventory: '商品管理',
     orders: '订单管理',
-    customers: '客户管理',
+    customers: '客户列表',
   };
 
   const customerListWithStats = useMemo(() => {
@@ -220,28 +214,26 @@ function App() {
   const productSearchMatcher = useMemo(
     () => createFieldSearchMatcher<Product>([
       (product) => product.name,
-      (product) => product.sku,
-      (product) => product.category,
       (product) => product.id,
     ]),
     [],
   );
 
-  const customerPhoneById = useMemo(
-    () => new Map(customers.map((customer) => [customer.id, customer.phone])),
-    [customers],
-  );
-
   const orderSearchMatcher = useMemo(
-    () => createOrderSearchMatcher(customerPhoneById),
-    [customerPhoneById],
+    () => createOrderSearchMatcher(),
+    [],
   );
 
-  const filteredCustomers = useSearchFilter({
+  const searchedCustomers = useSearchFilter({
     items: customerListWithStats,
     searchTerm,
     matcher: customerSearchMatcher,
   });
+
+  const filteredCustomers = useMemo(() => {
+    if (!exactCustomerId) return searchedCustomers;
+    return searchedCustomers.filter((customer) => customer.id === exactCustomerId);
+  }, [searchedCustomers, exactCustomerId]);
 
   const filteredProducts = useSearchFilter({
     items: products,
@@ -249,11 +241,16 @@ function App() {
     matcher: productSearchMatcher,
   });
 
-  const filteredOrders = useSearchFilter({
+  const searchedOrders = useSearchFilter({
     items: orders,
     searchTerm,
     matcher: orderSearchMatcher,
   });
+
+  const filteredOrders = useMemo(() => {
+    if (!exactOrderId) return searchedOrders;
+    return searchedOrders.filter((order) => order.id === exactOrderId);
+  }, [searchedOrders, exactOrderId]);
 
   const renderContent = () => {
     switch (activeView) {
@@ -269,7 +266,7 @@ function App() {
             onSearchChange={handleSearchChange}
             onOpenCreateProduct={openCreateProductModal}
             onOpenEditProduct={openEditProductModal}
-            onDeleteProduct={handleDeleteProduct}
+            onBulkDeleteProducts={handleBulkDeleteProducts}
           />
         );
       case 'orders':
@@ -277,14 +274,14 @@ function App() {
           <OrdersView
             orders={orders}
             filteredOrders={filteredOrders}
-            customers={customers}
             searchTerm={searchTerm}
-            onSearchChange={handleSearchChange}
+            onSearchChange={handleOrderSearchChange}
             ordersLoading={ordersLoading}
             ordersError={ordersError}
             onOpenOrderDetail={openOrderDetail}
+            onJumpToCustomer={jumpToCustomerFromOrder}
             onOpenEditOrder={openEditOrder}
-            onDeleteOrder={handleDeleteOrder}
+            onBulkDeleteOrders={handleBulkDeleteOrders}
             onOpenCreateOrder={openCreateOrder}
           />
         );
@@ -295,9 +292,10 @@ function App() {
             customersLoading={customersLoading}
             customersError={customersError}
             searchTerm={searchTerm}
-            onSearchChange={handleSearchChange}
+            onSearchChange={handleCustomerSearchChange}
             onOpenCreateCustomer={openCreateCustomerModal}
             onOpenEditCustomer={openEditCustomerModal}
+            onDeleteCustomer={handleDeleteCustomer}
             onOpenCustomerHistory={openCustomerHistory}
           />
         );
@@ -306,9 +304,26 @@ function App() {
     }
   };
 
+  const themeBridgeClassName = [
+    "dark:[&_[class*='bg-white']]:bg-slate-900",
+    "dark:[&_[class*='bg-slate-50']]:bg-slate-800",
+    "dark:[&_[class*='text-slate-900']]:text-slate-100",
+    "dark:[&_[class*='text-slate-800']]:text-slate-200",
+    "dark:[&_[class*='text-slate-700']]:text-slate-300",
+    "dark:[&_[class*='text-slate-600']]:text-slate-300",
+    "dark:[&_[class*='text-slate-500']]:text-slate-400",
+    "dark:[&_[class*='text-slate-400']]:text-slate-500",
+    "dark:[&_[class*='border-slate-100']]:border-slate-700",
+    "dark:[&_[class*='border-slate-200']]:border-slate-700",
+    "dark:[&_[class*='border-slate-300']]:border-slate-600",
+    'dark:[&_input]:bg-slate-900 dark:[&_input]:text-slate-100 dark:[&_input]:border-slate-600',
+    'dark:[&_select]:bg-slate-900 dark:[&_select]:text-slate-100 dark:[&_select]:border-slate-600',
+    'dark:[&_textarea]:bg-slate-900 dark:[&_textarea]:text-slate-100 dark:[&_textarea]:border-slate-600',
+  ].join(' ');
+
   return (
-    <>
-      <div className="min-h-screen bg-slate-50 flex">
+    <div className={themeBridgeClassName}>
+      <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex">
         <aside className="hidden lg:flex lg:w-64 bg-slate-900 text-slate-100 flex-col">
           <div className="h-16 border-b border-slate-800 flex items-center justify-center">
             <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">NexusAdmin</h1>
@@ -332,18 +347,18 @@ function App() {
         </aside>
 
         <div className="flex-1 min-w-0 flex flex-col">
-          <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 sticky top-0 z-10">
-            <h2 className="text-xl font-semibold text-slate-800">{titleMap[activeView]}</h2>
-            <div className="flex items-center gap-3">
-              <button
-                className="p-2 rounded-full text-slate-400 hover:bg-slate-100"
-                aria-label="查看通知"
-                title="查看通知"
-              >
-                <Bell className="h-5 w-5" />
-              </button>
-              <div className="h-8 w-8 rounded-full bg-slate-900 text-white flex items-center justify-center text-sm font-semibold">管</div>
-            </div>
+          <header className="h-16 bg-white border-b border-slate-200 dark:bg-slate-900 dark:border-slate-700 flex items-center justify-between px-4 sm:px-6 lg:px-8">
+            <h2 className="text-lg sm:text-xl font-semibold text-slate-900">{titleMap[activeView]}</h2>
+            <button
+              type="button"
+              onClick={toggleThemeMode}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-600 border border-slate-300 rounded-lg bg-white hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+              title={isDarkMode ? '切换到日间模式' : '切换到夜间模式'}
+              aria-label={isDarkMode ? '切换到日间模式' : '切换到夜间模式'}
+            >
+              {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {isDarkMode ? '日间模式' : '夜间模式'}
+            </button>
           </header>
           <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">{renderContent()}</main>
         </div>
@@ -365,6 +380,9 @@ function App() {
         setOrderCustomerPhone={setOrderCustomerPhone}
         orderCustomerNotes={orderCustomerNotes}
         setOrderCustomerNotes={setOrderCustomerNotes}
+        orderVisionRecords={orderVisionRecords}
+        setOrderVisionRecords={setOrderVisionRecords}
+        setOrderVisionRecordsTouched={setOrderVisionRecordsTouched}
         isCustomerPickerOpen={isCustomerPickerOpen}
         setIsCustomerPickerOpen={setIsCustomerPickerOpen}
         activeProductPickerIndex={activeProductPickerIndex}
@@ -376,6 +394,7 @@ function App() {
         orderNotes={orderNotes}
         setOrderNotes={setOrderNotes}
         createEmptyOrderItemDraft={createEmptyOrderItemDraft}
+        createEmptyVisionRecordForm={createEmptyVisionRecordForm}
         formatCurrencyText={formatCurrencyText}
         sanitizeMoneyTextInput={sanitizeMoneyTextInput}
         normalizeMoneyTextToFixed2={normalizeMoneyTextToFixed2}
@@ -416,7 +435,7 @@ function App() {
         detailError={detailError}
         onClose={() => setDetailOrder(null)}
       />
-    </>
+    </div>
   );
 }
 

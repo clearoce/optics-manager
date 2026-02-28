@@ -4,31 +4,45 @@ import (
 	"context"
 	"database/sql"
 	"optics-manager/models"
+	"time"
 )
 
+type CustomerVisionRecordInput struct {
+	RecordedAt        *time.Time
+	LeftSphere        float64
+	LeftCylinder      float64
+	LeftAxis          int
+	LeftPD            float64
+	LeftVisualAcuity  float64
+	RightSphere       float64
+	RightCylinder     float64
+	RightAxis         int
+	RightPD           float64
+	RightVisualAcuity float64
+}
+
 type CustomerCreateInput struct {
-	Name  string
-	Phone string
-	Notes *string
+	Name          string
+	Phone         string
+	Notes         *string
+	VisionRecords []CustomerVisionRecordInput
 }
 
 type CustomerUpdateInput struct {
-	Name  string
-	Phone string
-	Notes *string
+	Name          string
+	Phone         string
+	Notes         *string
+	VisionRecords []CustomerVisionRecordInput
 }
 
 type ProductCreateInput struct {
 	Name      string
-	Category  string
-	SKU       *string
 	Price     float64
 	ExtraInfo *string
 }
 
 type ProductUpdateInput struct {
 	Name      string
-	Category  string
 	Price     float64
 	ExtraInfo *string
 }
@@ -36,6 +50,7 @@ type ProductUpdateInput struct {
 type OrderItemInput struct {
 	ProductID int64
 	Quantity  int
+	UnitPrice float64
 	PaidPrice float64
 }
 
@@ -60,11 +75,13 @@ type CustomerService interface {
 	GetCustomers(ctx context.Context, phone string) ([]models.Customer, error)
 	GetCustomerByID(ctx context.Context, id int64) (models.Customer, error)
 	UpdateCustomer(ctx context.Context, id int64, input CustomerUpdateInput) error
+	AppendCustomerVisionRecords(ctx context.Context, id int64, records []CustomerVisionRecordInput) error
+	DeleteCustomer(ctx context.Context, id int64) error
 }
 
 type ProductService interface {
 	CreateProduct(ctx context.Context, input ProductCreateInput) (int64, error)
-	GetProducts(ctx context.Context, category string) ([]models.Product, error)
+	GetProducts(ctx context.Context) ([]models.Product, error)
 	GetProductByID(ctx context.Context, id int64) (models.Product, error)
 	UpdateProduct(ctx context.Context, id int64, input ProductUpdateInput) error
 	DeleteProduct(ctx context.Context, id int64) error

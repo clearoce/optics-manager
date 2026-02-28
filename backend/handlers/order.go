@@ -12,6 +12,7 @@ import (
 type OrderItemRequest struct {
 	ProductID int64   `json:"product_id" binding:"required"`
 	Quantity  int     `json:"quantity"   binding:"required,gt=0"`
+	UnitPrice float64 `json:"unit_price" binding:"required,gt=0"`
 	PaidPrice float64 `json:"paid_price" binding:"required,gt=0"`
 }
 
@@ -31,8 +32,8 @@ type UpdateOrderRequest struct {
 	ExtraInfo   *string            `json:"extra_info"`
 }
 
-func CreateOrder(c *gin.Context) {
-	deps, ok := getDeps(c)
+func (h *Handler) CreateOrder(c *gin.Context) {
+	deps, ok := h.getDeps(c)
 	if !ok {
 		return
 	}
@@ -69,8 +70,8 @@ func CreateOrder(c *gin.Context) {
 	successResponse(c, gin.H{"order_id": orderID, "total_amount": totalAmount, "message": "订单创建成功"})
 }
 
-func GetOrders(c *gin.Context) {
-	deps, ok := getDeps(c)
+func (h *Handler) GetOrders(c *gin.Context) {
+	deps, ok := h.getDeps(c)
 	if !ok {
 		return
 	}
@@ -95,8 +96,8 @@ func GetOrders(c *gin.Context) {
 	successResponse(c, orders)
 }
 
-func GetOrderDetail(c *gin.Context) {
-	deps, ok := getDeps(c)
+func (h *Handler) GetOrderDetail(c *gin.Context) {
+	deps, ok := h.getDeps(c)
 	if !ok {
 		return
 	}
@@ -120,8 +121,8 @@ func GetOrderDetail(c *gin.Context) {
 	successResponse(c, detail)
 }
 
-func UpdateOrder(c *gin.Context) {
-	deps, ok := getDeps(c)
+func (h *Handler) UpdateOrder(c *gin.Context) {
+	deps, ok := h.getDeps(c)
 	if !ok {
 		return
 	}
@@ -164,8 +165,8 @@ func UpdateOrder(c *gin.Context) {
 	successResponse(c, gin.H{"message": "订单更新成功", "total_amount": totalAmount})
 }
 
-func DeleteOrder(c *gin.Context) {
-	deps, ok := getDeps(c)
+func (h *Handler) DeleteOrder(c *gin.Context) {
+	deps, ok := h.getDeps(c)
 	if !ok {
 		return
 	}
@@ -195,6 +196,7 @@ func mapOrderItems(items []OrderItemRequest) []services.OrderItemInput {
 		out = append(out, services.OrderItemInput{
 			ProductID: item.ProductID,
 			Quantity:  item.Quantity,
+			UnitPrice: item.UnitPrice,
 			PaidPrice: item.PaidPrice,
 		})
 	}

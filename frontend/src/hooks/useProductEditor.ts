@@ -7,18 +7,15 @@ import type { Product } from '../types';
 
 const EMPTY_PRODUCT_FORM: ProductFormState = {
   name: '',
-  sku: '',
-  category: '',
   price: '',
   notes: '',
 };
 
 type UseProductEditorParams = {
-  products: Product[];
   loadProducts: () => Promise<void>;
 };
 
-export function useProductEditor({ products, loadProducts }: UseProductEditorParams) {
+export function useProductEditor({ loadProducts }: UseProductEditorParams) {
   const [productSubmitting, setProductSubmitting] = useState(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -34,8 +31,6 @@ export function useProductEditor({ products, loadProducts }: UseProductEditorPar
     setEditingProduct(product);
     setProductForm({
       name: product.name,
-      sku: product.sku,
-      category: product.category,
       price: String(product.price),
       notes: product.notes === '-' ? '' : product.notes,
     });
@@ -48,7 +43,7 @@ export function useProductEditor({ products, loadProducts }: UseProductEditorPar
 
   const handleSubmitProduct = async (event: FormEvent) => {
     event.preventDefault();
-    if (!productForm.name.trim() || !productForm.category.trim() || !productForm.price.trim()) return;
+    if (!productForm.name.trim() || !productForm.price.trim()) return;
 
     const price = Number(productForm.price);
     if (!Number.isFinite(price) || price <= 0) {
@@ -56,36 +51,24 @@ export function useProductEditor({ products, loadProducts }: UseProductEditorPar
       return;
     }
 
-    const sku = productForm.sku.trim();
-    if (sku) {
-      const isSkuDuplicate = products.some((candidate) =>
-        candidate.sku === sku && (!editingProduct || candidate.id !== editingProduct.id),
-      );
-      if (isSkuDuplicate) {
-        notifyError(`SKU「${sku}」已存在，请使用唯一的 SKU`);
-        return;
-      }
-    }
-
     setProductSubmitting(true);
     try {
       if (editingProduct) {
+        const confirmed = window.confirm(`确认保存对商品「${editingProduct.name}」的修改吗？`);
+        if (!confirmed) return;
+
         const id = Number(editingProduct.id);
         if (!Number.isFinite(id)) {
           throw new Error('当前商品不是后端数据，无法编辑');
         }
         await api.products.update(id, {
           name: productForm.name.trim(),
-          sku: sku || null,
-          category: productForm.category.trim(),
           price,
           extra_info: productForm.notes.trim() || null,
         });
       } else {
         await api.products.create({
           name: productForm.name.trim(),
-          sku: sku || null,
-          category: productForm.category.trim(),
           price,
           extra_info: productForm.notes.trim() || null,
         });
@@ -107,8 +90,11 @@ export function useProductEditor({ products, loadProducts }: UseProductEditorPar
       return;
     }
 
-    const ok = window.confirm(`确认删除商品「${product.name}」吗？`);
-    if (!ok) return;
+    const firstConfirm = window.confirm(`确认删除商品「${product.name}」吗？`);
+    if (!firstConfirm) return;
+
+    const secondConfirm = window.confirm('这是不可恢复操作，请再次确认删除该商品。');
+    if (!secondConfirm) return;
 
     try {
       await api.products.remove(id);

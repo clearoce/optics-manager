@@ -52,33 +52,6 @@ export function ProductModal({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">SKU（唯一标识，可选）</label>
-          <ClearableInput
-            type="text"
-            value={productForm.sku}
-            onChange={(value) => onProductFormChange({ ...productForm, sku: value })}
-            onClear={() => onProductFormChange({ ...productForm, sku: '' })}
-            clearAriaLabel="清空SKU输入"
-            className="w-full px-4 py-2 pr-9 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-            placeholder="例如：ESL-BL-01（可留空）"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">分类</label>
-          <ClearableInput
-            type="text"
-            required
-            value={productForm.category}
-            onChange={(value) => onProductFormChange({ ...productForm, category: value })}
-            onClear={() => onProductFormChange({ ...productForm, category: '' })}
-            clearAriaLabel="清空分类输入"
-            className="w-full px-4 py-2 pr-9 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-            placeholder="例如：镜片 / 镜框 / 隐形眼镜"
-          />
-        </div>
-
-        <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">价格</label>
           <ClearableInput
             type="number"

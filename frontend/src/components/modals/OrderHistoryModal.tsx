@@ -9,7 +9,7 @@ type OrderHistoryModalProps = {
   historyLoading: boolean;
   historyError: string;
   onClose: () => void;
-  onJumpToOrder: (orderId: number) => void;
+  onJumpToOrder: (orderId: number, customerName: string, customerPhone?: string) => void;
 };
 
 export function OrderHistoryModal({
@@ -25,7 +25,7 @@ export function OrderHistoryModal({
   return (
     <ModalShell containerClassName="max-w-5xl flex flex-col max-h-[92vh]">
       <ModalHeader
-        title={`${historyCustomer.name} 的订单历史`}
+        title={`${historyCustomer.name} - ${historyCustomer.phone} 的订单历史`}
         icon={<FileText className="h-5 w-5 mr-2 text-indigo-600" />}
         subtitle={<p className="text-xs text-slate-500 ml-7">客户ID：{historyCustomer.id}</p>}
         onClose={onClose}
@@ -61,7 +61,7 @@ export function OrderHistoryModal({
                 <tr key={order.id} className="hover:bg-slate-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <button
-                      onClick={() => onJumpToOrder(order.id)}
+                      onClick={() => onJumpToOrder(order.id, historyCustomer.name, historyCustomer.phone)}
                       className="text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center"
                       title="跳转到订单详情"
                     >

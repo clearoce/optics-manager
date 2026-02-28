@@ -12,17 +12,19 @@ type Dependencies struct {
 	OrderService    services.OrderService
 }
 
-var appDeps *Dependencies
-
-func InitServices(deps Dependencies) {
-	appDeps = &deps
+type Handler struct {
+	deps Dependencies
 }
 
-func getDeps(c *gin.Context) (*Dependencies, bool) {
-	if appDeps == nil {
+func NewHandler(deps Dependencies) *Handler {
+	return &Handler{deps: deps}
+}
+
+func (h *Handler) getDeps(c *gin.Context) (*Dependencies, bool) {
+	if h == nil {
 		errorResponse(c, 500, "服务未初始化")
 		return nil, false
 	}
 
-	return appDeps, true
+	return &h.deps, true
 }

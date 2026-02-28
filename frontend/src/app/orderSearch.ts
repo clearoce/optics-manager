@@ -1,14 +1,15 @@
 import type { Order } from '../types';
+import { matchSearchTokenInValue, type SearchToken } from '../hooks/useSearchFilter';
 
-export function createOrderSearchMatcher(customerPhoneById: Map<string, string>) {
-  return (order: Order, normalizedSearch: string) => (
-    order.id.toLowerCase().includes(normalizedSearch) ||
-    order.customerName.toLowerCase().includes(normalizedSearch) ||
-    (order.customerId ? customerPhoneById.get(order.customerId)?.toLowerCase().includes(normalizedSearch) : false) ||
-    order.notes.toLowerCase().includes(normalizedSearch)
+export function createOrderSearchMatcher() {
+  return (order: Order, token: SearchToken) => (
+    matchSearchTokenInValue(order.customerName, token) ||
+    matchSearchTokenInValue(order.customerPhone, token)
   );
 }
 
-export function buildHistoryJumpOrderSearchTerm(orderId: number) {
-  return String(orderId);
+export function buildHistoryJumpOrderSearchTerm(customerName: string, customerPhone?: string) {
+  const normalizedPhone = customerPhone?.trim();
+  if (normalizedPhone) return normalizedPhone;
+  return customerName.trim();
 }

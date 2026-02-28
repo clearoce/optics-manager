@@ -10,8 +10,6 @@ export type Status = (typeof Status)[keyof typeof Status];
 export interface Product {
   id: string;
   name: string;
-  sku: string;
-  category: string;
   price: number;
   notes: string;
   lastUpdated: string;
@@ -21,6 +19,7 @@ export interface Order {
   id: string;
   customerId?: string;
   customerName: string;
+  customerPhone: string;
   productName: string;
   notes: string;
   date: string;
@@ -33,12 +32,26 @@ export interface Customer {
   id: string;
   name: string;
   phone: string;
+  createdAt: string;
   totalSpent: number;
   lastOrderDate: string;
   notes: string;
-  customField1?: string;
-  customField2?: string;
-  customField3?: string;
+  visionRecords: CustomerVisionRecord[];
+}
+
+export interface CustomerVisionRecord {
+  id?: string;
+  recordedAt: string;
+  leftSphere: number;
+  leftCylinder: number;
+  leftAxis: number;
+  leftPD: number;
+  leftVisualAcuity: number;
+  rightSphere: number;
+  rightCylinder: number;
+  rightAxis: number;
+  rightPD: number;
+  rightVisualAcuity: number;
 }
 
 
