@@ -152,7 +152,7 @@ export const buildOrderDetailPrintDocument = ({
               <th>柱镜(C)</th>
               <th>轴位(A)</th>
               <th>瞳距(PD)</th>
-              <th>视力(VA)</th>
+              <th>矫正视力(VA)</th>
             </tr>
           </thead>
           <tbody>

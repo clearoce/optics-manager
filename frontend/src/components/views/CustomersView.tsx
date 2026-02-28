@@ -160,7 +160,7 @@ export function CustomersView({
                           <th className="px-2 py-1.5 font-medium border-b border-slate-200 text-center">柱镜(C)</th>
                           <th className="px-2 py-1.5 font-medium border-b border-slate-200 text-center">轴位(A)</th>
                           <th className="px-2 py-1.5 font-medium border-b border-slate-200 text-center">瞳距(PD)</th>
-                          <th className="px-2 py-1.5 font-medium border-b border-slate-200 text-center">视力(VA)</th>
+                          <th className="px-2 py-1.5 font-medium border-b border-slate-200 text-center">矫正视力(VA)</th>
                         </tr>
                       </thead>
                       <tbody>
