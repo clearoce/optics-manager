@@ -5,15 +5,6 @@ import { SearchBar } from '../common/SearchBar';
 
 const PAGE_SIZE_OPTIONS = [9, 12] as const;
 
-function formatRecordedAt(value: string) {
-  if (!value) return '未填写时间';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString('zh-CN', { hour12: false });
-}
-
 function formatCreatedDate(value: string) {
   if (!value || value === '-') return '未知';
   const date = new Date(value);
@@ -198,7 +189,7 @@ export function CustomersView({
               <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
                 <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-6 gap-y-1">
                   <span>创建日期：{formatCreatedDate(customer.createdAt)}</span>
-                  <span>最后验光日期：{latestRecord ? formatRecordedAt(latestRecord.recordedAt) : '暂无'}</span>
+                  <span>最后验光日期：{latestRecord ? formatCreatedDate(latestRecord.recordedAt) : '暂无'}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button

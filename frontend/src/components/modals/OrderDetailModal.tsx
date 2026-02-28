@@ -207,7 +207,7 @@ export function OrderDetailModal({ detailOrder, detailLoading, detailError, onCl
   const renderVisionSection = () => (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-slate-800">创建时验光信息</h3>
+        <h3 className="text-sm font-medium text-slate-800">验光信息</h3>
         {hasVisionRecords && (
           <span className="text-xs text-slate-500">共 {visionRecords.length} 组</span>
         )}
@@ -256,7 +256,7 @@ export function OrderDetailModal({ detailOrder, detailLoading, detailError, onCl
         ))
       ) : (
         <div className="text-sm text-slate-500 border border-dashed border-slate-200 rounded-xl px-4 py-5 bg-white">
-          无创建时验光信息
+          订单创建时未填写
         </div>
       )}
     </section>

@@ -40,6 +40,23 @@ const escapeHtml = (value: string) => value
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&#39;');
 
+const formatRecordedAtToMinute = (value: string) => {
+  const normalized = value.trim().replace('T', ' ');
+  const matched = normalized.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
+
+  if (matched) {
+    return matched[1];
+  }
+
+  const date = new Date(value);
+  if (!Number.isNaN(date.getTime())) {
+    const pad = (num: number) => String(num).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  return normalized;
+};
+
 const ORDER_DETAIL_PRINT_STYLE = `
 @page { size: A4 landscape; margin: 10mm; }
 body { margin: 0; color: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
@@ -50,15 +67,13 @@ table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 
 th, td { border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: top; word-break: break-word; overflow-wrap: anywhere; }
 th { background: #f8fafc; text-align: left; }
 .section-title { margin: 14px 0 6px; font-size: 14px; font-weight: 700; color: #0f172a; }
-.vision-table th:nth-child(1), .vision-table td:nth-child(1) { width: 6%; }
-.vision-table th:nth-child(2), .vision-table td:nth-child(2) { width: 14%; }
-.vision-table th:nth-child(3), .vision-table td:nth-child(3) { width: 8%; }
-.vision-table th:nth-child(4), .vision-table td:nth-child(4) { width: 12%; }
-.vision-table th:nth-child(5), .vision-table td:nth-child(5) { width: 12%; }
-.vision-table th:nth-child(6), .vision-table td:nth-child(6) { width: 12%; }
-.vision-table th:nth-child(7), .vision-table td:nth-child(7) { width: 12%; }
-.vision-table th:nth-child(8), .vision-table td:nth-child(8) { width: 12%; }
-.vision-table th:nth-child(9), .vision-table td:nth-child(9) { width: 12%; }
+.vision-table th:nth-child(1), .vision-table td:nth-child(1) { width: 20%; }
+.vision-table th:nth-child(2), .vision-table td:nth-child(2) { width: 8%; }
+.vision-table th:nth-child(3), .vision-table td:nth-child(3) { width: 14%; }
+.vision-table th:nth-child(4), .vision-table td:nth-child(4) { width: 14%; }
+.vision-table th:nth-child(5), .vision-table td:nth-child(5) { width: 14%; }
+.vision-table th:nth-child(6), .vision-table td:nth-child(6) { width: 14%; }
+.vision-table th:nth-child(7), .vision-table td:nth-child(7) { width: 16%; }
 .product-table th:nth-child(1), .product-table td:nth-child(1) { width: 10%; }
 .product-table th:nth-child(2), .product-table td:nth-child(2) { width: 30%; }
 .product-table th:nth-child(3), .product-table td:nth-child(3) { width: 18%; }
@@ -79,10 +94,12 @@ export const buildOrderDetailPrintDocument = ({
   visionRecords,
   rows,
 }: BuildOrderDetailPrintDocumentOptions) => {
-  const visionRowsHtml = visionRecords.map((record, index) => `
+  const visionRowsHtml = visionRecords.map((record) => {
+    const recordedAt = escapeHtml(formatRecordedAtToMinute(record.recordedAt));
+
+    return `
     <tr>
-      <td>${index + 1}</td>
-      <td>${escapeHtml(record.recordedAt)}</td>
+      <td rowspan="2">${recordedAt}</td>
       <td>左眼</td>
       <td>${escapeHtml(record.leftSphere)}</td>
       <td>${escapeHtml(record.leftCylinder)}</td>
@@ -91,8 +108,6 @@ export const buildOrderDetailPrintDocument = ({
       <td>${escapeHtml(record.leftVisualAcuity)}</td>
     </tr>
     <tr>
-      <td>${index + 1}</td>
-      <td>${escapeHtml(record.recordedAt)}</td>
       <td>右眼</td>
       <td>${escapeHtml(record.rightSphere)}</td>
       <td>${escapeHtml(record.rightCylinder)}</td>
@@ -100,7 +115,8 @@ export const buildOrderDetailPrintDocument = ({
       <td>${escapeHtml(record.rightPD)}</td>
       <td>${escapeHtml(record.rightVisualAcuity)}</td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 
   const rowsHtml = rows.map((row) => `
     <tr>
@@ -130,7 +146,6 @@ export const buildOrderDetailPrintDocument = ({
         <table class="vision-table">
           <thead>
             <tr>
-              <th>序号</th>
               <th>记录时间</th>
               <th>眼别</th>
               <th>球镜(S)</th>
@@ -141,7 +156,7 @@ export const buildOrderDetailPrintDocument = ({
             </tr>
           </thead>
           <tbody>
-            ${visionRowsHtml || '<tr><td colspan="8">无创建时验光信息</td></tr>'}
+            ${visionRowsHtml || '<tr><td colspan="7">订单创建时未填写</td></tr>'}
           </tbody>
         </table>
 
