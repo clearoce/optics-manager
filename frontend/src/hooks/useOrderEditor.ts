@@ -19,6 +19,12 @@ const getSnapshotProductLabel = (item: {
   return item.product_name_snapshot?.trim() || `商品 #${item.product_id}`;
 };
 
+const getCurrentDateTimeForInput = () => {
+  const now = new Date();
+  const localTime = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return localTime.toISOString().slice(0, 16);
+};
+
 const createEmptyOrderItemDraft = (): OrderItemDraft => ({
   productId: '',
   quantity: '1',
@@ -28,7 +34,7 @@ const createEmptyOrderItemDraft = (): OrderItemDraft => ({
 });
 
 const createEmptyVisionRecordForm = (): CustomerVisionRecordFormState => ({
-  recordedAt: '',
+  recordedAt: getCurrentDateTimeForInput(),
   leftSphere: '',
   leftCylinder: '',
   leftAxis: '',
@@ -129,41 +135,37 @@ const parseVisionRecordsFromOrderExtraInfo = (
 const mapVisionRecordsFormToPayload = (
   records: CustomerVisionRecordFormState[],
 ): CustomerVisionRecordPayload[] => {
-  return records
-    .map((record) => {
-      const hasAnyInput = [
-        record.recordedAt,
-        record.leftSphere,
-        record.leftCylinder,
-        record.leftAxis,
-        record.leftPD,
-        record.leftVisualAcuity,
-        record.rightSphere,
-        record.rightCylinder,
-        record.rightAxis,
-        record.rightPD,
-        record.rightVisualAcuity,
-      ].some((value) => value.trim() !== '');
+  const record = records[0];
+  if (!record) return [];
 
-      return {
-        hasAnyInput,
-        payload: {
-          recorded_at: record.recordedAt.trim() || null,
-          left_sphere: parseFloatOrZero(record.leftSphere),
-          left_cylinder: parseFloatOrZero(record.leftCylinder),
-          left_axis: parseIntOrZero(record.leftAxis),
-          left_pd: parseFloatOrZero(record.leftPD),
-          left_visual_acuity: parseFloatOrZero(record.leftVisualAcuity),
-          right_sphere: parseFloatOrZero(record.rightSphere),
-          right_cylinder: parseFloatOrZero(record.rightCylinder),
-          right_axis: parseIntOrZero(record.rightAxis),
-          right_pd: parseFloatOrZero(record.rightPD),
-          right_visual_acuity: parseFloatOrZero(record.rightVisualAcuity),
-        } satisfies CustomerVisionRecordPayload,
-      };
-    })
-    .filter((item) => item.hasAnyInput)
-    .map((item) => item.payload);
+  const hasAnyInput = [
+    record.leftSphere,
+    record.leftCylinder,
+    record.leftAxis,
+    record.leftPD,
+    record.leftVisualAcuity,
+    record.rightSphere,
+    record.rightCylinder,
+    record.rightAxis,
+    record.rightPD,
+    record.rightVisualAcuity,
+  ].some((value) => value.trim() !== '');
+
+  if (!hasAnyInput) return [];
+
+  return [{
+    recorded_at: record.recordedAt.trim() || null,
+    left_sphere: parseFloatOrZero(record.leftSphere),
+    left_cylinder: parseFloatOrZero(record.leftCylinder),
+    left_axis: parseIntOrZero(record.leftAxis),
+    left_pd: parseFloatOrZero(record.leftPD),
+    left_visual_acuity: parseFloatOrZero(record.leftVisualAcuity),
+    right_sphere: parseFloatOrZero(record.rightSphere),
+    right_cylinder: parseFloatOrZero(record.rightCylinder),
+    right_axis: parseIntOrZero(record.rightAxis),
+    right_pd: parseFloatOrZero(record.rightPD),
+    right_visual_acuity: parseFloatOrZero(record.rightVisualAcuity),
+  } satisfies CustomerVisionRecordPayload];
 };
 
 const mapCustomerVisionRecordsToPayload = (
@@ -267,21 +269,22 @@ export function useOrderEditor({
       setOrderCustomerName(matchedCustomer?.name ?? '');
       setOrderCustomerPhone(matchedCustomer?.phone ?? '');
       setOrderCustomerNotes(matchedCustomer?.notes ?? '');
+      const firstVisionRecord = orderVisionSnapshot[0];
       setOrderVisionRecords(
-        orderVisionSnapshot.length > 0
-          ? orderVisionSnapshot.map((record) => ({
-              recordedAt: normalizeDateTimeForInput(record.recorded_at),
-              leftSphere: String(record.left_sphere),
-              leftCylinder: String(record.left_cylinder),
-              leftAxis: String(record.left_axis),
-              leftPD: String(record.left_pd),
-              leftVisualAcuity: String(record.left_visual_acuity),
-              rightSphere: String(record.right_sphere),
-              rightCylinder: String(record.right_cylinder),
-              rightAxis: String(record.right_axis),
-              rightPD: String(record.right_pd),
-              rightVisualAcuity: String(record.right_visual_acuity),
-            }))
+        firstVisionRecord
+          ? [{
+              recordedAt: normalizeDateTimeForInput(firstVisionRecord.recorded_at),
+              leftSphere: String(firstVisionRecord.left_sphere),
+              leftCylinder: String(firstVisionRecord.left_cylinder),
+              leftAxis: String(firstVisionRecord.left_axis),
+              leftPD: String(firstVisionRecord.left_pd),
+              leftVisualAcuity: String(firstVisionRecord.left_visual_acuity),
+              rightSphere: String(firstVisionRecord.right_sphere),
+              rightCylinder: String(firstVisionRecord.right_cylinder),
+              rightAxis: String(firstVisionRecord.right_axis),
+              rightPD: String(firstVisionRecord.right_pd),
+              rightVisualAcuity: String(firstVisionRecord.right_visual_acuity),
+            }]
           : [createEmptyVisionRecordForm()],
       );
       setOrderVisionRecordsTouched(false);

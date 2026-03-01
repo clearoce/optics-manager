@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import type { Dispatch, FormEvent, SetStateAction } from 'react';
-import { Loader2, Plus, Save, ShoppingCart, Trash2, X } from 'lucide-react';
+import { Loader2, Plus, Save, ShoppingCart, X } from 'lucide-react';
 import type { CustomerVisionRecordFormState, OrderItemDraft } from '../../app/formTypes';
 import type { Customer, Product } from '../../types';
 import { ModalHeader, ModalShell } from '../common/ModalShell';
@@ -135,28 +135,11 @@ export function CreateOrEditOrderModal({
     (item) => item.productQuery.trim() && !item.productId,
   );
 
-  const updateVisionRecord = (
-    index: number,
-    patch: Partial<CustomerVisionRecordFormState>,
-  ) => {
-    setOrderVisionRecordsTouched(true);
-    setOrderVisionRecords((prev) =>
-      prev.map((record, recordIndex) =>
-        recordIndex === index ? { ...record, ...patch } : record,
-      ),
-    );
-  };
-
-  const addVisionRecord = () => {
-    setOrderVisionRecordsTouched(true);
-    setOrderVisionRecords((prev) => [...prev, createEmptyVisionRecordForm()]);
-  };
-
-  const removeVisionRecord = (index: number) => {
+  const updateVisionRecord = (patch: Partial<CustomerVisionRecordFormState>) => {
     setOrderVisionRecordsTouched(true);
     setOrderVisionRecords((prev) => {
-      const nextRecords = prev.filter((_, recordIndex) => recordIndex !== index);
-      return nextRecords.length > 0 ? nextRecords : [createEmptyVisionRecordForm()];
+      const currentRecord = prev[0] ?? createEmptyVisionRecordForm();
+      return [{ ...currentRecord, ...patch }];
     });
   };
 
@@ -271,38 +254,19 @@ export function CreateOrEditOrderModal({
 
             <div className="space-y-3 pt-1 mt-2">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium text-slate-800">验光参数记录（可多组）</h3>
-                <button
-                  type="button"
-                  onClick={addVisionRecord}
-                  className="inline-flex items-center text-xs px-2.5 py-1.5 rounded border border-blue-200 text-blue-700 hover:bg-blue-50"
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" />
-                  新增一组
-                </button>
+                <h3 className="text-sm font-medium text-slate-800">验光参数记录（单组）</h3>
               </div>
 
               <div className="text-xs text-slate-500 leading-5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                 轴位为整数（0-180）；球镜/柱镜保留 2 位小数；瞳距/矫正视力保留 1 位小数。
-                选择已有客户后，这里默认空白；本次填写并提交的参数会追加为新记录，不会覆盖历史记录。
+                选择已有客户后，这里默认空白；本次填写并提交的参数会作为一组新记录追加，不会覆盖历史记录。
               </div>
 
-              {orderVisionRecords.map((record, index) => {
-                const fieldPrefix = `order-vision-${index}`;
+              {orderVisionRecords.slice(0, 1).map((record, index) => {
+                const fieldPrefix = 'order-vision';
                 return (
                   <div key={index} className="border border-slate-200 rounded-xl p-3 space-y-3 bg-slate-50/60">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-medium text-slate-700">第 {index + 1} 组</div>
-                      <button
-                        type="button"
-                        onClick={() => removeVisionRecord(index)}
-                        disabled={orderVisionRecords.length === 1}
-                        className="inline-flex items-center text-xs px-2 py-1 rounded border border-rose-200 text-rose-700 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Trash2 className="h-3.5 w-3.5 mr-1" />
-                        删除
-                      </button>
-                    </div>
+                    <div className="text-sm font-medium text-slate-700">验光参数</div>
 
                     <div>
                       <label htmlFor={`${fieldPrefix}-recorded-at`} className="block text-xs font-medium text-slate-600 mb-1">
@@ -312,7 +276,7 @@ export function CreateOrEditOrderModal({
                         id={`${fieldPrefix}-recorded-at`}
                         type="datetime-local"
                         value={record.recordedAt}
-                        onChange={(event) => updateVisionRecord(index, { recordedAt: event.target.value })}
+                        onChange={(event) => updateVisionRecord({ recordedAt: event.target.value })}
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
                       />
                     </div>
@@ -332,19 +296,19 @@ export function CreateOrEditOrderModal({
                         <tbody>
                           <tr className="bg-white border-b border-slate-100">
                             <td className="px-2 py-2 text-center font-medium text-slate-700">左眼</td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-sphere`} type="number" step="0.01" value={record.leftSphere} onChange={(event) => updateVisionRecord(index, { leftSphere: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-cylinder`} type="number" step="0.01" value={record.leftCylinder} onChange={(event) => updateVisionRecord(index, { leftCylinder: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-axis`} type="number" step="1" min={0} max={180} value={record.leftAxis} onChange={(event) => updateVisionRecord(index, { leftAxis: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-pd`} type="number" step="0.1" value={record.leftPD} onChange={(event) => updateVisionRecord(index, { leftPD: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-visual-acuity`} type="number" step="0.1" value={record.leftVisualAcuity} onChange={(event) => updateVisionRecord(index, { leftVisualAcuity: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-sphere`} type="number" step="0.01" value={record.leftSphere} onChange={(event) => updateVisionRecord({ leftSphere: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-cylinder`} type="number" step="0.01" value={record.leftCylinder} onChange={(event) => updateVisionRecord({ leftCylinder: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-axis`} type="number" step="1" min={0} max={180} value={record.leftAxis} onChange={(event) => updateVisionRecord({ leftAxis: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-pd`} type="number" step="0.1" value={record.leftPD} onChange={(event) => updateVisionRecord({ leftPD: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-visual-acuity`} type="number" step="0.1" value={record.leftVisualAcuity} onChange={(event) => updateVisionRecord({ leftVisualAcuity: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
                           </tr>
                           <tr className="bg-white">
                             <td className="px-2 py-2 text-center font-medium text-slate-700">右眼</td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-sphere`} type="number" step="0.01" value={record.rightSphere} onChange={(event) => updateVisionRecord(index, { rightSphere: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-cylinder`} type="number" step="0.01" value={record.rightCylinder} onChange={(event) => updateVisionRecord(index, { rightCylinder: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-axis`} type="number" step="1" min={0} max={180} value={record.rightAxis} onChange={(event) => updateVisionRecord(index, { rightAxis: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-pd`} type="number" step="0.1" value={record.rightPD} onChange={(event) => updateVisionRecord(index, { rightPD: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-visual-acuity`} type="number" step="0.1" value={record.rightVisualAcuity} onChange={(event) => updateVisionRecord(index, { rightVisualAcuity: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-sphere`} type="number" step="0.01" value={record.rightSphere} onChange={(event) => updateVisionRecord({ rightSphere: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-cylinder`} type="number" step="0.01" value={record.rightCylinder} onChange={(event) => updateVisionRecord({ rightCylinder: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-axis`} type="number" step="1" min={0} max={180} value={record.rightAxis} onChange={(event) => updateVisionRecord({ rightAxis: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-pd`} type="number" step="0.1" value={record.rightPD} onChange={(event) => updateVisionRecord({ rightPD: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-visual-acuity`} type="number" step="0.1" value={record.rightVisualAcuity} onChange={(event) => updateVisionRecord({ rightVisualAcuity: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
                           </tr>
                         </tbody>
                       </table>

@@ -52,8 +52,6 @@ mkdir "%RELEASE_DIR%"
 mkdir "%RELEASE_DIR%\backend"
 
 copy "%BACKEND_DIR%\optics-server.exe" "%RELEASE_DIR%\backend\" >nul
-copy "%BACKEND_DIR%\database\test_data.sql" "%RELEASE_DIR%\backend\" >nul
-copy "%BACKEND_DIR%\database\test_data_pagination.sql" "%RELEASE_DIR%\backend\" >nul
 copy "%ROOT_DIR%启动系统.bat" "%RELEASE_DIR%\" >nul
 copy "%ROOT_DIR%停止系统.bat" "%RELEASE_DIR%\" >nul
 copy "%ROOT_DIR%README.md" "%RELEASE_DIR%\" >nul

@@ -1,6 +1,6 @@
 -- optics-manager 测试数据（覆盖导入）
 -- 用法示例：
--- sqlite3 optics.db ".read database/test_data.sql"
+-- sqlite3 optics.db ".read test_data.sql"
 
 PRAGMA foreign_keys = OFF;
 BEGIN TRANSACTION;

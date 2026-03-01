@@ -26,8 +26,15 @@ export function CustomerModal({
 }: CustomerModalProps) {
   if (!isOpen) return null;
 
-  const createEmptyVisionRecord = (): CustomerVisionRecordFormState => ({
-    recordedAt: '',
+  const getCurrentDateTimeForInput = () => {
+    const now = new Date();
+    const localTime = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+    return localTime.toISOString().slice(0, 16);
+  };
+
+  const createEmptyVisionRecord = (groupNumber: number): CustomerVisionRecordFormState => ({
+    groupNumber,
+    recordedAt: getCurrentDateTimeForInput(),
     leftSphere: '',
     leftCylinder: '',
     leftAxis: '',
@@ -39,6 +46,9 @@ export function CustomerModal({
     rightPD: '',
     rightVisualAcuity: '',
   });
+
+  const getRecordGroupNumber = (record: CustomerVisionRecordFormState, fallbackIndex: number) =>
+    record.groupNumber ?? fallbackIndex + 1;
 
   const updateVisionRecord = (
     index: number,
@@ -53,19 +63,42 @@ export function CustomerModal({
   };
 
   const addVisionRecord = () => {
+    const nextGroupNumber = customerForm.visionRecords.reduce((max, record, index) => {
+      const currentGroupNumber = getRecordGroupNumber(record, index);
+      return currentGroupNumber > max ? currentGroupNumber : max;
+    }, 0) + 1;
+
     onCustomerFormChange({
       ...customerForm,
-      visionRecords: [...customerForm.visionRecords, createEmptyVisionRecord()],
+      visionRecords: [...customerForm.visionRecords, createEmptyVisionRecord(nextGroupNumber)],
     });
   };
 
-  const removeVisionRecord = (index: number) => {
+  const removeVisionRecord = (index: number, groupNumber: number) => {
+    const confirmed = window.confirm(`确认删除第 ${groupNumber} 组验光参数吗？`);
+    if (!confirmed) return;
+
     const nextRecords = customerForm.visionRecords.filter((_, recordIndex) => recordIndex !== index);
     onCustomerFormChange({
       ...customerForm,
-      visionRecords: nextRecords.length > 0 ? nextRecords : [createEmptyVisionRecord()],
+      visionRecords: nextRecords,
     });
   };
+
+  const sortedVisionRecordEntries = customerForm.visionRecords
+    .map((record, originalIndex) => {
+      return {
+        record,
+        originalIndex,
+        groupNumber: getRecordGroupNumber(record, originalIndex),
+      };
+    })
+    .sort((a, b) => {
+      if (a.groupNumber !== b.groupNumber) {
+        return b.groupNumber - a.groupNumber;
+      }
+      return a.originalIndex - b.originalIndex;
+    });
 
   return (
     <ModalShell containerClassName="max-w-4xl max-h-[92vh] flex flex-col">
@@ -136,19 +169,21 @@ export function CustomerModal({
             轴位为整数（0-180）；球镜/柱镜保留 2 位小数；瞳距/矫正视力保留 1 位小数。
           </div>
 
-          {customerForm.visionRecords.map((record, index) => (
-            <div key={index} className="border border-slate-200 rounded-xl p-3 space-y-3 bg-slate-50/60">
-              {(() => {
-                const fieldPrefix = `vision-${index}`;
-                return (
-                  <>
+          {customerForm.visionRecords.length === 0 ? (
+            <div className="bg-slate-50 rounded p-2 text-center text-xs text-slate-400">暂无验光记录</div>
+          ) : (
+            sortedVisionRecordEntries.map(({ record, originalIndex, groupNumber }) => (
+              <div key={groupNumber} className="border border-slate-200 rounded-xl p-3 space-y-3 bg-slate-50/60">
+                {(() => {
+                  const fieldPrefix = `vision-${groupNumber}`;
+                  return (
+                    <>
               <div className="flex items-center justify-between">
-                <div className="text-sm font-medium text-slate-700">第 {index + 1} 组</div>
+                <div className="text-sm font-medium text-slate-700">第 {groupNumber} 组</div>
                 <button
                   type="button"
-                  onClick={() => removeVisionRecord(index)}
-                  disabled={customerForm.visionRecords.length === 1}
-                  className="inline-flex items-center text-xs px-2 py-1 rounded border border-rose-200 text-rose-700 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => removeVisionRecord(originalIndex, groupNumber)}
+                  className="inline-flex items-center text-xs px-2 py-1 rounded border border-rose-200 text-rose-700 hover:bg-rose-50"
                 >
                   <Trash2 className="h-3.5 w-3.5 mr-1" />
                   删除
@@ -163,7 +198,7 @@ export function CustomerModal({
                   id={`${fieldPrefix}-recorded-at`}
                   type="datetime-local"
                   value={record.recordedAt}
-                  onChange={(event) => updateVisionRecord(index, { recordedAt: event.target.value })}
+                  onChange={(event) => updateVisionRecord(originalIndex, { recordedAt: event.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
                 />
               </div>
@@ -189,7 +224,7 @@ export function CustomerModal({
                           type="number"
                           step="0.01"
                           value={record.leftSphere}
-                          onChange={(event) => updateVisionRecord(index, { leftSphere: event.target.value })}
+                          onChange={(event) => updateVisionRecord(originalIndex, { leftSphere: event.target.value })}
                           className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                       </td>
@@ -199,7 +234,7 @@ export function CustomerModal({
                           type="number"
                           step="0.01"
                           value={record.leftCylinder}
-                          onChange={(event) => updateVisionRecord(index, { leftCylinder: event.target.value })}
+                          onChange={(event) => updateVisionRecord(originalIndex, { leftCylinder: event.target.value })}
                           className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                       </td>
@@ -211,7 +246,7 @@ export function CustomerModal({
                           min={0}
                           max={180}
                           value={record.leftAxis}
-                          onChange={(event) => updateVisionRecord(index, { leftAxis: event.target.value })}
+                          onChange={(event) => updateVisionRecord(originalIndex, { leftAxis: event.target.value })}
                           className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                       </td>
@@ -221,7 +256,7 @@ export function CustomerModal({
                           type="number"
                           step="0.1"
                           value={record.leftPD}
-                          onChange={(event) => updateVisionRecord(index, { leftPD: event.target.value })}
+                          onChange={(event) => updateVisionRecord(originalIndex, { leftPD: event.target.value })}
                           className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                       </td>
@@ -231,7 +266,7 @@ export function CustomerModal({
                           type="number"
                           step="0.1"
                           value={record.leftVisualAcuity}
-                          onChange={(event) => updateVisionRecord(index, { leftVisualAcuity: event.target.value })}
+                          onChange={(event) => updateVisionRecord(originalIndex, { leftVisualAcuity: event.target.value })}
                           className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                       </td>
@@ -244,7 +279,7 @@ export function CustomerModal({
                           type="number"
                           step="0.01"
                           value={record.rightSphere}
-                          onChange={(event) => updateVisionRecord(index, { rightSphere: event.target.value })}
+                          onChange={(event) => updateVisionRecord(originalIndex, { rightSphere: event.target.value })}
                           className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                       </td>
@@ -254,7 +289,7 @@ export function CustomerModal({
                           type="number"
                           step="0.01"
                           value={record.rightCylinder}
-                          onChange={(event) => updateVisionRecord(index, { rightCylinder: event.target.value })}
+                          onChange={(event) => updateVisionRecord(originalIndex, { rightCylinder: event.target.value })}
                           className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                       </td>
@@ -266,7 +301,7 @@ export function CustomerModal({
                           min={0}
                           max={180}
                           value={record.rightAxis}
-                          onChange={(event) => updateVisionRecord(index, { rightAxis: event.target.value })}
+                          onChange={(event) => updateVisionRecord(originalIndex, { rightAxis: event.target.value })}
                           className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                       </td>
@@ -276,7 +311,7 @@ export function CustomerModal({
                           type="number"
                           step="0.1"
                           value={record.rightPD}
-                          onChange={(event) => updateVisionRecord(index, { rightPD: event.target.value })}
+                          onChange={(event) => updateVisionRecord(originalIndex, { rightPD: event.target.value })}
                           className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                       </td>
@@ -286,7 +321,7 @@ export function CustomerModal({
                           type="number"
                           step="0.1"
                           value={record.rightVisualAcuity}
-                          onChange={(event) => updateVisionRecord(index, { rightVisualAcuity: event.target.value })}
+                          onChange={(event) => updateVisionRecord(originalIndex, { rightVisualAcuity: event.target.value })}
                           className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                       </td>
@@ -294,11 +329,12 @@ export function CustomerModal({
                   </tbody>
                 </table>
               </div>
-                  </>
-                );
-              })()}
-            </div>
-          ))}
+                    </>
+                  );
+                })()}
+              </div>
+            ))
+          )}
         </div>
 
         <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">

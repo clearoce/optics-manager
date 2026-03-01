@@ -6,6 +6,7 @@ export type CustomerFormState = {
 };
 
 export type CustomerVisionRecordFormState = {
+  groupNumber?: number;
   recordedAt: string;
   leftSphere: string;
   leftCylinder: string;

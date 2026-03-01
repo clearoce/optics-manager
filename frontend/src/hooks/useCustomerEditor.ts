@@ -5,29 +5,60 @@ import { getErrorMessage, notifyError } from '../app/notify';
 import { api } from '../services/api';
 import type { Customer } from '../types';
 
-const createEmptyVisionRecordForm = (): CustomerVisionRecordFormState => ({
-  recordedAt: '',
-  leftSphere: '',
-  leftCylinder: '',
-  leftAxis: '',
-  leftPD: '',
-  leftVisualAcuity: '',
-  rightSphere: '',
-  rightCylinder: '',
-  rightAxis: '',
-  rightPD: '',
-  rightVisualAcuity: '',
-});
-
 const EMPTY_CUSTOMER_FORM: CustomerFormState = {
   name: '',
   phone: '',
   notes: '',
-  visionRecords: [createEmptyVisionRecordForm()],
+  visionRecords: [],
 };
 
 type UseCustomerEditorParams = {
   loadCustomers: () => Promise<void>;
+};
+
+const mapCustomerVisionRecordsToForm = (
+  records: Customer['visionRecords'],
+): CustomerVisionRecordFormState[] => {
+  const mappedRecords: CustomerVisionRecordFormState[] = records.map((record) => ({
+    recordedAt: record.recordedAt ? record.recordedAt.slice(0, 16) : '',
+    leftSphere: record.leftSphere.toFixed(2),
+    leftCylinder: record.leftCylinder.toFixed(2),
+    leftAxis: String(record.leftAxis),
+    leftPD: record.leftPD.toFixed(1),
+    leftVisualAcuity: record.leftVisualAcuity.toFixed(1),
+    rightSphere: record.rightSphere.toFixed(2),
+    rightCylinder: record.rightCylinder.toFixed(2),
+    rightAxis: String(record.rightAxis),
+    rightPD: record.rightPD.toFixed(1),
+    rightVisualAcuity: record.rightVisualAcuity.toFixed(1),
+  }));
+
+  const sortedIndexes = mappedRecords
+    .map((record, index) => {
+      const timestamp = record.recordedAt
+        ? new Date(record.recordedAt).getTime()
+        : Number.POSITIVE_INFINITY;
+      return {
+        index,
+        timestamp: Number.isFinite(timestamp) ? timestamp : Number.POSITIVE_INFINITY,
+      };
+    })
+    .sort((a, b) => {
+      if (a.timestamp !== b.timestamp) {
+        return a.timestamp - b.timestamp;
+      }
+      return a.index - b.index;
+    });
+
+  const groupNumberByIndex = new Map<number, number>();
+  sortedIndexes.forEach((item, sortedIndex) => {
+    groupNumberByIndex.set(item.index, sortedIndex + 1);
+  });
+
+  return mappedRecords.map((record, index) => ({
+    ...record,
+    groupNumber: groupNumberByIndex.get(index) ?? 1,
+  }));
 };
 
 export function useCustomerEditor({ loadCustomers }: UseCustomerEditorParams) {
@@ -50,20 +81,8 @@ export function useCustomerEditor({ loadCustomers }: UseCustomerEditorParams) {
       notes: customer.notes,
       visionRecords:
         customer.visionRecords.length > 0
-          ? customer.visionRecords.map((record) => ({
-              recordedAt: record.recordedAt ? record.recordedAt.slice(0, 16) : '',
-              leftSphere: record.leftSphere.toFixed(2),
-              leftCylinder: record.leftCylinder.toFixed(2),
-              leftAxis: String(record.leftAxis),
-              leftPD: record.leftPD.toFixed(1),
-              leftVisualAcuity: record.leftVisualAcuity.toFixed(1),
-              rightSphere: record.rightSphere.toFixed(2),
-              rightCylinder: record.rightCylinder.toFixed(2),
-              rightAxis: String(record.rightAxis),
-              rightPD: record.rightPD.toFixed(1),
-              rightVisualAcuity: record.rightVisualAcuity.toFixed(1),
-            }))
-          : [createEmptyVisionRecordForm()],
+          ? mapCustomerVisionRecordsToForm(customer.visionRecords)
+          : [],
     });
     setIsCustomerModalOpen(true);
   };
@@ -86,10 +105,23 @@ export function useCustomerEditor({ loadCustomers }: UseCustomerEditorParams) {
       return Number.isFinite(parsed) ? parsed : 0;
     };
 
-    const visionPayload = customerForm.visionRecords
+    const visionRecordsForSubmit = customerForm.visionRecords
+      .map((record, index) => ({
+        record,
+        index,
+        groupNumber: record.groupNumber ?? index + 1,
+      }))
+      .sort((a, b) => {
+        if (a.groupNumber !== b.groupNumber) {
+          return a.groupNumber - b.groupNumber;
+        }
+        return a.index - b.index;
+      })
+      .map((item) => item.record);
+
+    const visionPayload = visionRecordsForSubmit
       .map((record) => {
         const hasAnyInput = [
-          record.recordedAt,
           record.leftSphere,
           record.leftCylinder,
           record.leftAxis,

@@ -1,7 +1,7 @@
 -- optics-manager 大量分页测试数据（覆盖导入）
 -- 用途：快速生成“商品列表 / 订单列表”分页压测数据
--- 用法示例（在 backend 目录下执行）：
--- sqlite3 optics.db ".read database/test_data_pagination.sql"
+-- 用法示例：
+-- sqlite3 optics.db ".read test_data_pagination.sql"
 
 PRAGMA foreign_keys = OFF;
 BEGIN TRANSACTION;
