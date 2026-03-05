@@ -83,6 +83,18 @@ const parseIntegerLike = (value: unknown) => {
   return 0;
 };
 
+const parseVisionTextLike = (value: unknown) => {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : '';
+  }
+
+  return '';
+};
+
 const normalizeDateTimeForInput = (value: string | null | undefined) => {
   if (!value) return '';
   return value.replace(' ', 'T').slice(0, 16);
@@ -113,16 +125,16 @@ const parseVisionRecordsFromOrderExtraInfo = (
               : typeof row.recordedAt === 'string'
                 ? row.recordedAt
                 : null,
-          left_sphere: parseNumberLike(row.left_sphere ?? row.leftSphere),
+          left_sphere: parseVisionTextLike(row.left_sphere ?? row.leftSphere),
           left_cylinder: parseNumberLike(row.left_cylinder ?? row.leftCylinder),
           left_axis: parseIntegerLike(row.left_axis ?? row.leftAxis),
           left_pd: parseNumberLike(row.left_pd ?? row.leftPD),
-          left_visual_acuity: parseNumberLike(row.left_visual_acuity ?? row.leftVisualAcuity),
-          right_sphere: parseNumberLike(row.right_sphere ?? row.rightSphere),
+          left_visual_acuity: parseVisionTextLike(row.left_visual_acuity ?? row.leftVisualAcuity),
+          right_sphere: parseVisionTextLike(row.right_sphere ?? row.rightSphere),
           right_cylinder: parseNumberLike(row.right_cylinder ?? row.rightCylinder),
           right_axis: parseIntegerLike(row.right_axis ?? row.rightAxis),
           right_pd: parseNumberLike(row.right_pd ?? row.rightPD),
-          right_visual_acuity: parseNumberLike(row.right_visual_acuity ?? row.rightVisualAcuity),
+          right_visual_acuity: parseVisionTextLike(row.right_visual_acuity ?? row.rightVisualAcuity),
         };
       });
 
@@ -155,16 +167,16 @@ const mapVisionRecordsFormToPayload = (
 
   return [{
     recorded_at: record.recordedAt.trim() || null,
-    left_sphere: parseFloatOrZero(record.leftSphere),
+    left_sphere: record.leftSphere.trim(),
     left_cylinder: parseFloatOrZero(record.leftCylinder),
     left_axis: parseIntOrZero(record.leftAxis),
     left_pd: parseFloatOrZero(record.leftPD),
-    left_visual_acuity: parseFloatOrZero(record.leftVisualAcuity),
-    right_sphere: parseFloatOrZero(record.rightSphere),
+    left_visual_acuity: record.leftVisualAcuity.trim(),
+    right_sphere: record.rightSphere.trim(),
     right_cylinder: parseFloatOrZero(record.rightCylinder),
     right_axis: parseIntOrZero(record.rightAxis),
     right_pd: parseFloatOrZero(record.rightPD),
-    right_visual_acuity: parseFloatOrZero(record.rightVisualAcuity),
+    right_visual_acuity: record.rightVisualAcuity.trim(),
   } satisfies CustomerVisionRecordPayload];
 };
 
@@ -274,16 +286,16 @@ export function useOrderEditor({
         firstVisionRecord
           ? [{
               recordedAt: normalizeDateTimeForInput(firstVisionRecord.recorded_at),
-              leftSphere: String(firstVisionRecord.left_sphere),
+              leftSphere: firstVisionRecord.left_sphere,
               leftCylinder: String(firstVisionRecord.left_cylinder),
               leftAxis: String(firstVisionRecord.left_axis),
               leftPD: String(firstVisionRecord.left_pd),
-              leftVisualAcuity: String(firstVisionRecord.left_visual_acuity),
-              rightSphere: String(firstVisionRecord.right_sphere),
+              leftVisualAcuity: firstVisionRecord.left_visual_acuity,
+              rightSphere: firstVisionRecord.right_sphere,
               rightCylinder: String(firstVisionRecord.right_cylinder),
               rightAxis: String(firstVisionRecord.right_axis),
               rightPD: String(firstVisionRecord.right_pd),
-              rightVisualAcuity: String(firstVisionRecord.right_visual_acuity),
+              rightVisualAcuity: firstVisionRecord.right_visual_acuity,
             }]
           : [createEmptyVisionRecordForm()],
       );

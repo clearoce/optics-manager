@@ -21,15 +21,15 @@ type CustomerVisionData struct {
 	ID                int64     `db:"id" json:"id"`
 	CustomerID        int64     `db:"customer_id" json:"customer_id"`
 	RecordedAt        time.Time `db:"recorded_at" json:"recorded_at"`
-	LeftSphere        float64   `db:"left_sphere" json:"left_sphere"`
+	LeftSphere        string    `db:"left_sphere" json:"left_sphere"`
 	LeftCylinder      float64   `db:"left_cylinder" json:"left_cylinder"`
 	LeftAxis          int       `db:"left_axis" json:"left_axis"`
 	LeftPD            float64   `db:"left_pd" json:"left_pd"`
-	LeftVisualAcuity  float64   `db:"left_visual_acuity" json:"left_visual_acuity"`
-	RightSphere       float64   `db:"right_sphere" json:"right_sphere"`
+	LeftVisualAcuity  string    `db:"left_visual_acuity" json:"left_visual_acuity"`
+	RightSphere       string    `db:"right_sphere" json:"right_sphere"`
 	RightCylinder     float64   `db:"right_cylinder" json:"right_cylinder"`
 	RightAxis         int       `db:"right_axis" json:"right_axis"`
 	RightPD           float64   `db:"right_pd" json:"right_pd"`
-	RightVisualAcuity float64   `db:"right_visual_acuity" json:"right_visual_acuity"`
+	RightVisualAcuity string    `db:"right_visual_acuity" json:"right_visual_acuity"`
 	CreatedAt         time.Time `db:"created_at" json:"created_at"`
 }

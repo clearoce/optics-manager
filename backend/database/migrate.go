@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 )
 
 // Migrate 负责在数据库中创建所有需要的表
@@ -29,16 +30,16 @@ func Migrate() {
 			id                 INTEGER PRIMARY KEY AUTOINCREMENT,
 			customer_id        INTEGER NOT NULL,
 			recorded_at        DATETIME NOT NULL,
-			left_sphere        REAL NOT NULL,
+			left_sphere        TEXT NOT NULL,
 			left_cylinder      REAL NOT NULL,
 			left_axis          INTEGER NOT NULL,
 			left_pd            REAL NOT NULL,
-			left_visual_acuity REAL NOT NULL,
-			right_sphere       REAL NOT NULL,
+			left_visual_acuity TEXT NOT NULL,
+			right_sphere       TEXT NOT NULL,
 			right_cylinder     REAL NOT NULL,
 			right_axis         INTEGER NOT NULL,
 			right_pd           REAL NOT NULL,
-			right_visual_acuity REAL NOT NULL,
+			right_visual_acuity TEXT NOT NULL,
 			created_at         DATETIME DEFAULT (datetime('now', '+8 hours')),
 			FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
 		)`,
@@ -111,6 +112,10 @@ func Migrate() {
 	}
 
 	if err := ensureOrdersSupportDeletingCustomer(); err != nil {
+		log.Fatalf("数据库迁移失败: %v", err)
+	}
+
+	if err := ensureCustomerVisionRecordStringColumns(); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
 
@@ -358,6 +363,147 @@ func ensureOrdersSupportDeletingCustomer() (err error) {
 	committed = true
 
 	log.Println("已重建 orders 表：允许删除有关联订单的客户，订单保留客户快照")
+	return nil
+}
+
+func ensureCustomerVisionRecordStringColumns() (err error) {
+	rows, err := DB.Query(`PRAGMA table_info(customer_vision_records)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	expectedTextColumns := map[string]struct{}{
+		"left_sphere":         {},
+		"left_visual_acuity":  {},
+		"right_sphere":        {},
+		"right_visual_acuity": {},
+	}
+
+	needsRebuild := false
+	for rows.Next() {
+		var (
+			cid          int
+			name         string
+			columnType   string
+			notNull      int
+			defaultValue sql.NullString
+			pk           int
+		)
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+
+		if _, ok := expectedTextColumns[name]; !ok {
+			continue
+		}
+
+		if !strings.Contains(strings.ToUpper(columnType), "TEXT") {
+			needsRebuild = true
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !needsRebuild {
+		return nil
+	}
+
+	if _, err = DB.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+		return err
+	}
+	defer func() {
+		if _, execErr := DB.Exec(`PRAGMA foreign_keys = ON`); err == nil && execErr != nil {
+			err = execErr
+		}
+	}()
+
+	tx, err := DB.Begin()
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err := tx.Exec(`CREATE TABLE customer_vision_records_new (
+		id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+		customer_id         INTEGER NOT NULL,
+		recorded_at         DATETIME NOT NULL,
+		left_sphere         TEXT NOT NULL,
+		left_cylinder       REAL NOT NULL,
+		left_axis           INTEGER NOT NULL,
+		left_pd             REAL NOT NULL,
+		left_visual_acuity  TEXT NOT NULL,
+		right_sphere        TEXT NOT NULL,
+		right_cylinder      REAL NOT NULL,
+		right_axis          INTEGER NOT NULL,
+		right_pd            REAL NOT NULL,
+		right_visual_acuity TEXT NOT NULL,
+		created_at          DATETIME DEFAULT (datetime('now', '+8 hours')),
+		FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+	)`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`INSERT INTO customer_vision_records_new (
+		id,
+		customer_id,
+		recorded_at,
+		left_sphere,
+		left_cylinder,
+		left_axis,
+		left_pd,
+		left_visual_acuity,
+		right_sphere,
+		right_cylinder,
+		right_axis,
+		right_pd,
+		right_visual_acuity,
+		created_at
+	)
+	SELECT
+		id,
+		customer_id,
+		recorded_at,
+		CAST(left_sphere AS TEXT),
+		left_cylinder,
+		left_axis,
+		left_pd,
+		CAST(left_visual_acuity AS TEXT),
+		CAST(right_sphere AS TEXT),
+		right_cylinder,
+		right_axis,
+		right_pd,
+		CAST(right_visual_acuity AS TEXT),
+		created_at
+	FROM customer_vision_records`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`DROP TABLE customer_vision_records`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`ALTER TABLE customer_vision_records_new RENAME TO customer_vision_records`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_customer_vision_records_customer_id_recorded_at
+	ON customer_vision_records(customer_id, recorded_at DESC, id DESC)`); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+
+	log.Println("已重建 customer_vision_records 表：球镜与矫正视力字段升级为 TEXT")
 	return nil
 }
 

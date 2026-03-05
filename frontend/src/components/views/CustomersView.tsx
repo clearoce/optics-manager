@@ -14,6 +14,11 @@ function formatCreatedDate(value: string) {
   return date.toLocaleDateString('zh-CN');
 }
 
+function formatVisionText(value: string) {
+  const normalized = value.trim();
+  return normalized || '-';
+}
+
 function getLatestVisionRecord(customer: Customer) {
   if (customer.visionRecords.length === 0) {
     return null;
@@ -166,19 +171,19 @@ export function CustomersView({
                       <tbody>
                         <tr className="bg-white">
                           <td className="px-2 py-1.5 border-b border-slate-100 text-center">左眼</td>
-                          <td className="px-2 py-1.5 border-b border-slate-100 text-center">{latestRecord.leftSphere.toFixed(2)}</td>
+                          <td className="px-2 py-1.5 border-b border-slate-100 text-center">{formatVisionText(latestRecord.leftSphere)}</td>
                           <td className="px-2 py-1.5 border-b border-slate-100 text-center">{latestRecord.leftCylinder.toFixed(2)}</td>
                           <td className="px-2 py-1.5 border-b border-slate-100 text-center">{latestRecord.leftAxis}</td>
-                          <td className="px-2 py-1.5 border-b border-slate-100 text-center">{latestRecord.leftPD.toFixed(1)}</td>
-                          <td className="px-2 py-1.5 border-b border-slate-100 text-center">{latestRecord.leftVisualAcuity.toFixed(1)}</td>
+                          <td className="px-2 py-1.5 border-b border-slate-100 text-center">{latestRecord.leftPD.toFixed(2)}</td>
+                          <td className="px-2 py-1.5 border-b border-slate-100 text-center">{formatVisionText(latestRecord.leftVisualAcuity)}</td>
                         </tr>
                         <tr className="bg-white">
                           <td className="px-2 py-1.5 text-center">右眼</td>
-                          <td className="px-2 py-1.5 text-center">{latestRecord.rightSphere.toFixed(2)}</td>
+                          <td className="px-2 py-1.5 text-center">{formatVisionText(latestRecord.rightSphere)}</td>
                           <td className="px-2 py-1.5 text-center">{latestRecord.rightCylinder.toFixed(2)}</td>
                           <td className="px-2 py-1.5 text-center">{latestRecord.rightAxis}</td>
-                          <td className="px-2 py-1.5 text-center">{latestRecord.rightPD.toFixed(1)}</td>
-                          <td className="px-2 py-1.5 text-center">{latestRecord.rightVisualAcuity.toFixed(1)}</td>
+                          <td className="px-2 py-1.5 text-center">{latestRecord.rightPD.toFixed(2)}</td>
+                          <td className="px-2 py-1.5 text-center">{formatVisionText(latestRecord.rightVisualAcuity)}</td>
                         </tr>
                       </tbody>
                     </table>

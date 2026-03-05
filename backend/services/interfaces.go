@@ -9,16 +9,16 @@ import (
 
 type CustomerVisionRecordInput struct {
 	RecordedAt        *time.Time
-	LeftSphere        float64
+	LeftSphere        string
 	LeftCylinder      float64
 	LeftAxis          int
 	LeftPD            float64
-	LeftVisualAcuity  float64
-	RightSphere       float64
+	LeftVisualAcuity  string
+	RightSphere       string
 	RightCylinder     float64
 	RightAxis         int
 	RightPD           float64
-	RightVisualAcuity float64
+	RightVisualAcuity string
 }
 
 type CustomerCreateInput struct {

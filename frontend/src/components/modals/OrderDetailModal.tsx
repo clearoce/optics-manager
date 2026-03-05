@@ -58,6 +58,19 @@ const parseIntegerText = (value: unknown) => {
   return '-';
 };
 
+const parseVisionText = (value: unknown) => {
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized || '-';
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : '-';
+  }
+
+  return '-';
+};
+
 const parseVisionRecordsFromOrderExtraInfo = (
   extraInfo: string | null | undefined,
 ): VisionRecordSnapshot[] => {
@@ -83,16 +96,16 @@ const parseVisionRecordsFromOrderExtraInfo = (
               : typeof row.recordedAt === 'string'
                 ? row.recordedAt
                 : null,
-          leftSphere: parseNumberText(row.left_sphere ?? row.leftSphere, 2),
+          leftSphere: parseVisionText(row.left_sphere ?? row.leftSphere),
           leftCylinder: parseNumberText(row.left_cylinder ?? row.leftCylinder, 2),
           leftAxis: parseIntegerText(row.left_axis ?? row.leftAxis),
-          leftPD: parseNumberText(row.left_pd ?? row.leftPD, 1),
-          leftVisualAcuity: parseNumberText(row.left_visual_acuity ?? row.leftVisualAcuity, 1),
-          rightSphere: parseNumberText(row.right_sphere ?? row.rightSphere, 2),
+          leftPD: parseNumberText(row.left_pd ?? row.leftPD, 2),
+          leftVisualAcuity: parseVisionText(row.left_visual_acuity ?? row.leftVisualAcuity),
+          rightSphere: parseVisionText(row.right_sphere ?? row.rightSphere),
           rightCylinder: parseNumberText(row.right_cylinder ?? row.rightCylinder, 2),
           rightAxis: parseIntegerText(row.right_axis ?? row.rightAxis),
-          rightPD: parseNumberText(row.right_pd ?? row.rightPD, 1),
-          rightVisualAcuity: parseNumberText(row.right_visual_acuity ?? row.rightVisualAcuity, 1),
+          rightPD: parseNumberText(row.right_pd ?? row.rightPD, 2),
+          rightVisualAcuity: parseVisionText(row.right_visual_acuity ?? row.rightVisualAcuity),
         } satisfies VisionRecordSnapshot;
       })
       .filter((record): record is VisionRecordSnapshot => record !== null);

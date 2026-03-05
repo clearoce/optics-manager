@@ -8,6 +8,7 @@ import (
 	"math"
 	"optics-manager/database"
 	"optics-manager/models"
+	"strings"
 	"time"
 )
 
@@ -298,14 +299,14 @@ func normalizeVisionRecords(records []CustomerVisionRecordInput) ([]CustomerVisi
 		}
 
 		mapped := record
-		mapped.LeftSphere = roundTo(record.LeftSphere, 2)
+		mapped.LeftSphere = strings.TrimSpace(record.LeftSphere)
 		mapped.LeftCylinder = roundTo(record.LeftCylinder, 2)
-		mapped.LeftPD = roundTo(record.LeftPD, 1)
-		mapped.LeftVisualAcuity = roundTo(record.LeftVisualAcuity, 1)
-		mapped.RightSphere = roundTo(record.RightSphere, 2)
+		mapped.LeftPD = roundTo(record.LeftPD, 2)
+		mapped.LeftVisualAcuity = strings.TrimSpace(record.LeftVisualAcuity)
+		mapped.RightSphere = strings.TrimSpace(record.RightSphere)
 		mapped.RightCylinder = roundTo(record.RightCylinder, 2)
-		mapped.RightPD = roundTo(record.RightPD, 1)
-		mapped.RightVisualAcuity = roundTo(record.RightVisualAcuity, 1)
+		mapped.RightPD = roundTo(record.RightPD, 2)
+		mapped.RightVisualAcuity = strings.TrimSpace(record.RightVisualAcuity)
 
 		if mapped.RecordedAt == nil {
 			now := time.Now().In(time.Local)
@@ -323,14 +324,10 @@ func validateVisionRecord(record CustomerVisionRecordInput) error {
 		name  string
 		value float64
 	}{
-		{name: "left_sphere", value: record.LeftSphere},
 		{name: "left_cylinder", value: record.LeftCylinder},
 		{name: "left_pd", value: record.LeftPD},
-		{name: "left_visual_acuity", value: record.LeftVisualAcuity},
-		{name: "right_sphere", value: record.RightSphere},
 		{name: "right_cylinder", value: record.RightCylinder},
 		{name: "right_pd", value: record.RightPD},
-		{name: "right_visual_acuity", value: record.RightVisualAcuity},
 	}
 
 	for _, value := range values {

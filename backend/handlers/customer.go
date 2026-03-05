@@ -32,16 +32,16 @@ type AppendCustomerVisionRecordsRequest struct {
 
 type CustomerVisionRecordInput struct {
 	RecordedAt        *string `json:"recorded_at"`
-	LeftSphere        float64 `json:"left_sphere"`
+	LeftSphere        string  `json:"left_sphere"`
 	LeftCylinder      float64 `json:"left_cylinder"`
 	LeftAxis          int     `json:"left_axis"`
 	LeftPD            float64 `json:"left_pd"`
-	LeftVisualAcuity  float64 `json:"left_visual_acuity"`
-	RightSphere       float64 `json:"right_sphere"`
+	LeftVisualAcuity  string  `json:"left_visual_acuity"`
+	RightSphere       string  `json:"right_sphere"`
 	RightCylinder     float64 `json:"right_cylinder"`
 	RightAxis         int     `json:"right_axis"`
 	RightPD           float64 `json:"right_pd"`
-	RightVisualAcuity float64 `json:"right_visual_acuity"`
+	RightVisualAcuity string  `json:"right_visual_acuity"`
 }
 
 func (h *Handler) CreateCustomer(c *gin.Context) {

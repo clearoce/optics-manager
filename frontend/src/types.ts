@@ -42,16 +42,16 @@ export interface Customer {
 export interface CustomerVisionRecord {
   id?: string;
   recordedAt: string;
-  leftSphere: number;
+  leftSphere: string;
   leftCylinder: number;
   leftAxis: number;
   leftPD: number;
-  leftVisualAcuity: number;
-  rightSphere: number;
+  leftVisualAcuity: string;
+  rightSphere: string;
   rightCylinder: number;
   rightAxis: number;
   rightPD: number;
-  rightVisualAcuity: number;
+  rightVisualAcuity: string;
 }
 
 

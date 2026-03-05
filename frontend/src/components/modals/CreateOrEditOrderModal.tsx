@@ -258,7 +258,7 @@ export function CreateOrEditOrderModal({
               </div>
 
               <div className="text-xs text-slate-500 leading-5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                轴位为整数（0-180）；球镜/柱镜保留 2 位小数；瞳距/矫正视力保留 1 位小数。
+                轴位为整数（0-180）；柱镜与瞳距保留 2 位小数；球镜与矫正视力按字符串保存。
                 选择已有客户后，这里默认空白；本次填写并提交的参数会作为一组新记录追加，不会覆盖历史记录。
               </div>
 
@@ -296,19 +296,19 @@ export function CreateOrEditOrderModal({
                         <tbody>
                           <tr className="bg-white border-b border-slate-100">
                             <td className="px-2 py-2 text-center font-medium text-slate-700">左眼</td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-sphere`} type="number" step="0.01" value={record.leftSphere} onChange={(event) => updateVisionRecord({ leftSphere: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-sphere`} type="text" inputMode="decimal" value={record.leftSphere} onChange={(event) => updateVisionRecord({ leftSphere: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
                             <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-cylinder`} type="number" step="0.01" value={record.leftCylinder} onChange={(event) => updateVisionRecord({ leftCylinder: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
                             <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-axis`} type="number" step="1" min={0} max={180} value={record.leftAxis} onChange={(event) => updateVisionRecord({ leftAxis: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-pd`} type="number" step="0.1" value={record.leftPD} onChange={(event) => updateVisionRecord({ leftPD: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-visual-acuity`} type="number" step="0.1" value={record.leftVisualAcuity} onChange={(event) => updateVisionRecord({ leftVisualAcuity: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-pd`} type="number" step="0.01" value={record.leftPD} onChange={(event) => updateVisionRecord({ leftPD: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-left-visual-acuity`} type="text" inputMode="decimal" value={record.leftVisualAcuity} onChange={(event) => updateVisionRecord({ leftVisualAcuity: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
                           </tr>
                           <tr className="bg-white">
                             <td className="px-2 py-2 text-center font-medium text-slate-700">右眼</td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-sphere`} type="number" step="0.01" value={record.rightSphere} onChange={(event) => updateVisionRecord({ rightSphere: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-sphere`} type="text" inputMode="decimal" value={record.rightSphere} onChange={(event) => updateVisionRecord({ rightSphere: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
                             <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-cylinder`} type="number" step="0.01" value={record.rightCylinder} onChange={(event) => updateVisionRecord({ rightCylinder: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
                             <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-axis`} type="number" step="1" min={0} max={180} value={record.rightAxis} onChange={(event) => updateVisionRecord({ rightAxis: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-pd`} type="number" step="0.1" value={record.rightPD} onChange={(event) => updateVisionRecord({ rightPD: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
-                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-visual-acuity`} type="number" step="0.1" value={record.rightVisualAcuity} onChange={(event) => updateVisionRecord({ rightVisualAcuity: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-pd`} type="number" step="0.01" value={record.rightPD} onChange={(event) => updateVisionRecord({ rightPD: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
+                            <td className="px-2 py-1.5"><input id={`${fieldPrefix}-right-visual-acuity`} type="text" inputMode="decimal" value={record.rightVisualAcuity} onChange={(event) => updateVisionRecord({ rightVisualAcuity: event.target.value })} className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-xs focus:ring-2 focus:ring-blue-500 outline-none" /></td>
                           </tr>
                         </tbody>
                       </table>

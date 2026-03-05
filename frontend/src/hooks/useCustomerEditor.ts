@@ -21,16 +21,16 @@ const mapCustomerVisionRecordsToForm = (
 ): CustomerVisionRecordFormState[] => {
   const mappedRecords: CustomerVisionRecordFormState[] = records.map((record) => ({
     recordedAt: record.recordedAt ? record.recordedAt.slice(0, 16) : '',
-    leftSphere: record.leftSphere.toFixed(2),
+    leftSphere: record.leftSphere,
     leftCylinder: record.leftCylinder.toFixed(2),
     leftAxis: String(record.leftAxis),
-    leftPD: record.leftPD.toFixed(1),
-    leftVisualAcuity: record.leftVisualAcuity.toFixed(1),
-    rightSphere: record.rightSphere.toFixed(2),
+    leftPD: record.leftPD.toFixed(2),
+    leftVisualAcuity: record.leftVisualAcuity,
+    rightSphere: record.rightSphere,
     rightCylinder: record.rightCylinder.toFixed(2),
     rightAxis: String(record.rightAxis),
-    rightPD: record.rightPD.toFixed(1),
-    rightVisualAcuity: record.rightVisualAcuity.toFixed(1),
+    rightPD: record.rightPD.toFixed(2),
+    rightVisualAcuity: record.rightVisualAcuity,
   }));
 
   const sortedIndexes = mappedRecords
@@ -138,16 +138,16 @@ export function useCustomerEditor({ loadCustomers }: UseCustomerEditorParams) {
           hasAnyInput,
           payload: {
             recorded_at: record.recordedAt.trim() || null,
-            left_sphere: parseFloatOrZero(record.leftSphere),
+            left_sphere: record.leftSphere.trim(),
             left_cylinder: parseFloatOrZero(record.leftCylinder),
             left_axis: parseIntOrZero(record.leftAxis),
             left_pd: parseFloatOrZero(record.leftPD),
-            left_visual_acuity: parseFloatOrZero(record.leftVisualAcuity),
-            right_sphere: parseFloatOrZero(record.rightSphere),
+            left_visual_acuity: record.leftVisualAcuity.trim(),
+            right_sphere: record.rightSphere.trim(),
             right_cylinder: parseFloatOrZero(record.rightCylinder),
             right_axis: parseIntOrZero(record.rightAxis),
             right_pd: parseFloatOrZero(record.rightPD),
-            right_visual_acuity: parseFloatOrZero(record.rightVisualAcuity),
+            right_visual_acuity: record.rightVisualAcuity.trim(),
           },
         };
       })

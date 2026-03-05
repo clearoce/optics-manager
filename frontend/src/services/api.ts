@@ -26,31 +26,31 @@ export interface CustomerVisionRecordDTO {
   id?: number;
   customer_id?: number;
   recorded_at?: string;
-  left_sphere: number;
+  left_sphere: string;
   left_cylinder: number;
   left_axis: number;
   left_pd: number;
-  left_visual_acuity: number;
-  right_sphere: number;
+  left_visual_acuity: string;
+  right_sphere: string;
   right_cylinder: number;
   right_axis: number;
   right_pd: number;
-  right_visual_acuity: number;
+  right_visual_acuity: string;
   created_at?: string;
 }
 
 export interface CustomerVisionRecordPayload {
   recorded_at?: string | null;
-  left_sphere: number;
+  left_sphere: string;
   left_cylinder: number;
   left_axis: number;
   left_pd: number;
-  left_visual_acuity: number;
-  right_sphere: number;
+  left_visual_acuity: string;
+  right_sphere: string;
   right_cylinder: number;
   right_axis: number;
   right_pd: number;
-  right_visual_acuity: number;
+  right_visual_acuity: string;
 }
 
 export interface CreateCustomerPayload {
@@ -166,9 +166,9 @@ type RawCustomerVisionRecord = {
   recorded_at?: string;
   recordedAt?: string;
   RecordedAt?: string;
-  left_sphere?: number;
-  leftSphere?: number;
-  LeftSphere?: number;
+  left_sphere?: string | number;
+  leftSphere?: string | number;
+  LeftSphere?: string | number;
   left_cylinder?: number;
   leftCylinder?: number;
   LeftCylinder?: number;
@@ -178,12 +178,12 @@ type RawCustomerVisionRecord = {
   left_pd?: number;
   leftPD?: number;
   LeftPD?: number;
-  left_visual_acuity?: number;
-  leftVisualAcuity?: number;
-  LeftVisualAcuity?: number;
-  right_sphere?: number;
-  rightSphere?: number;
-  RightSphere?: number;
+  left_visual_acuity?: string | number;
+  leftVisualAcuity?: string | number;
+  LeftVisualAcuity?: string | number;
+  right_sphere?: string | number;
+  rightSphere?: string | number;
+  RightSphere?: string | number;
   right_cylinder?: number;
   rightCylinder?: number;
   RightCylinder?: number;
@@ -193,9 +193,9 @@ type RawCustomerVisionRecord = {
   right_pd?: number;
   rightPD?: number;
   RightPD?: number;
-  right_visual_acuity?: number;
-  rightVisualAcuity?: number;
-  RightVisualAcuity?: number;
+  right_visual_acuity?: string | number;
+  rightVisualAcuity?: string | number;
+  RightVisualAcuity?: string | number;
   created_at?: string;
   createdAt?: string;
   CreatedAt?: string;
@@ -272,6 +272,31 @@ type RawProduct = {
   CreatedAt?: string;
 };
 
+const toFiniteNumber = (value: unknown, fallback = 0) => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : fallback;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value.trim());
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  return fallback;
+};
+
+const toVisionText = (value: unknown) => {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? String(value) : '';
+  }
+
+  return '';
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
@@ -320,18 +345,20 @@ export const api = {
           id: record.id ?? record.ID,
           customer_id: record.customer_id ?? record.customerId ?? record.CustomerID,
           recorded_at: record.recorded_at ?? record.recordedAt ?? record.RecordedAt,
-          left_sphere: record.left_sphere ?? record.leftSphere ?? record.LeftSphere ?? 0,
-          left_cylinder: record.left_cylinder ?? record.leftCylinder ?? record.LeftCylinder ?? 0,
-          left_axis: record.left_axis ?? record.leftAxis ?? record.LeftAxis ?? 0,
-          left_pd: record.left_pd ?? record.leftPD ?? record.LeftPD ?? 0,
-          left_visual_acuity:
-            record.left_visual_acuity ?? record.leftVisualAcuity ?? record.LeftVisualAcuity ?? 0,
-          right_sphere: record.right_sphere ?? record.rightSphere ?? record.RightSphere ?? 0,
-          right_cylinder: record.right_cylinder ?? record.rightCylinder ?? record.RightCylinder ?? 0,
-          right_axis: record.right_axis ?? record.rightAxis ?? record.RightAxis ?? 0,
-          right_pd: record.right_pd ?? record.rightPD ?? record.RightPD ?? 0,
-          right_visual_acuity:
-            record.right_visual_acuity ?? record.rightVisualAcuity ?? record.RightVisualAcuity ?? 0,
+          left_sphere: toVisionText(record.left_sphere ?? record.leftSphere ?? record.LeftSphere),
+          left_cylinder: toFiniteNumber(record.left_cylinder ?? record.leftCylinder ?? record.LeftCylinder),
+          left_axis: Math.trunc(toFiniteNumber(record.left_axis ?? record.leftAxis ?? record.LeftAxis)),
+          left_pd: toFiniteNumber(record.left_pd ?? record.leftPD ?? record.LeftPD),
+          left_visual_acuity: toVisionText(
+            record.left_visual_acuity ?? record.leftVisualAcuity ?? record.LeftVisualAcuity,
+          ),
+          right_sphere: toVisionText(record.right_sphere ?? record.rightSphere ?? record.RightSphere),
+          right_cylinder: toFiniteNumber(record.right_cylinder ?? record.rightCylinder ?? record.RightCylinder),
+          right_axis: Math.trunc(toFiniteNumber(record.right_axis ?? record.rightAxis ?? record.RightAxis)),
+          right_pd: toFiniteNumber(record.right_pd ?? record.rightPD ?? record.RightPD),
+          right_visual_acuity: toVisionText(
+            record.right_visual_acuity ?? record.rightVisualAcuity ?? record.RightVisualAcuity,
+          ),
           created_at: record.created_at ?? record.createdAt ?? record.CreatedAt,
         })),
       } satisfies CustomerDTO));
